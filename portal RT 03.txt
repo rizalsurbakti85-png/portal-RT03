@@ -1,0 +1,2338 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  Home, Wallet, FileText, User, Bell, AlertTriangle, ShieldAlert, 
+  CheckCircle, Clock, X, Users, Search, Settings, XCircle, 
+  PlusCircle, Camera, Edit2, Trash2, Printer, QrCode, BarChart3, PieChart,
+  LogOut, Mail, ChevronDown, Download, Send
+} from 'lucide-react';
+
+// ==========================================
+// KONFIGURASI FIREBASE MUTLAK (HARDCODE)
+// ==========================================
+const firebaseConfig = {
+  apiKey: "AIzaSyDtLS6zgupb0EnP-374V2TuErYyl98c3DA",
+  authDomain: "portal-rt-03-bd16c.firebaseapp.com",
+  projectId: "portal-rt-03-bd16c",
+  storageBucket: "portal-rt-03-bd16c.firebasestorage.app",
+  messagingSenderId: "836079396426",
+  appId: "1:836079396426:web:1285539f1c610a7806a8b3",
+  measurementId: "G-WL6NP9X109"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app, 'default');
+
+// Memaksa App ID menggunakan milik Anda
+const appId = "portal-rt-03-bd16c";
+
+// Fungsi Helper Path
+const getCollectionPath = (colName) => collection(db, 'artifacts', appId, 'public', 'data', colName);
+const getDocPath = (colName, docId) => doc(db, 'artifacts', appId, 'public', 'data', colName, docId);
+
+// ==========================================
+// FUNGSI UTILITY
+// ==========================================
+const calculateAge = (birthDateString) => {
+  if (!birthDateString) return "-";
+  const today = new Date();
+  const birthDate = new Date(birthDateString);
+  
+  let years = today.getFullYear() - birthDate.getFullYear();
+  let months = today.getMonth() - birthDate.getMonth();
+  let days = today.getDate() - birthDate.getDate();
+
+  if (days < 0) {
+    const prevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+    days += prevMonth.getDate();
+    months--;
+  }
+  if (months < 0) {
+    months += 12;
+    years--;
+  }
+
+  const ageParts = [];
+  if (years > 0) ageParts.push(`${years} Tahun`);
+  if (months > 0) ageParts.push(`${months} Bulan`);
+  if (days > 0 || ageParts.length === 0) ageParts.push(`${days} Hari`);
+
+  return ageParts.join(" ");
+};
+
+const getAgeInYears = (birthDateString) => {
+  if (!birthDateString) return 0;
+  const today = new Date();
+  const birthDate = new Date(birthDateString);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+  return age;
+};
+
+const getHubunganBadgeColor = (hubungan) => {
+  const hub = hubungan?.toLowerCase() || '';
+  if (hub.includes('istri')) return 'from-purple-700 to-indigo-900 border-purple-600/30';
+  if (hub.includes('anak')) return 'from-blue-600 to-indigo-800 border-blue-600/30';
+  if (hub.includes('tua') || hub.includes('ibu') || hub.includes('ayah')) return 'from-amber-600 to-red-800 border-amber-600/30';
+  return 'from-teal-600 to-emerald-800 border-teal-600/30'; 
+};
+
+// ==========================================
+// KOMPONEN MODAL POPUP GLOBAL
+// ==========================================
+function ImagePreviewModal({ imageUrl, onClose }) {
+  if (!imageUrl) return null;
+  return (
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white bg-white/10 hover:bg-white/20 rounded-full p-2.5 transition-colors z-50">
+        <X size={24} />
+      </button>
+      <img src={imageUrl} alt="Preview" className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl animate-in zoom-in duration-200" onClick={(e) => e.stopPropagation()} />
+    </div>
+  );
+}
+
+function CustomModal({ isOpen, title, message, type, onClose }) {
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 3500); 
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+  return (
+    <div className="absolute top-4 left-0 w-full px-4 flex justify-center pointer-events-none" style={{ zIndex: 9999 }}>
+      <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-200 flex items-center gap-3 p-4 pointer-events-auto animate-in slide-in-from-top-4 fade-in duration-300 shadow-2xl">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+          type === 'danger' ? 'bg-red-100 text-red-600' : 
+          type === 'success' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+        }`}>
+          {type === 'danger' ? <ShieldAlert size={20} /> : 
+           type === 'success' ? <CheckCircle size={20} /> : <Bell size={20} />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-gray-800 text-sm truncate">{title}</h3>
+          <p className="text-gray-500 text-[11px] leading-snug">{message}</p>
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-800 shrink-0 p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"><X size={14} /></button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmPopup({ isOpen, title, message, onConfirm, onCancel, confirmText }) {
+  if (!isOpen) return null;
+  return (
+    <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-[2rem]" style={{ zIndex: 9999 }}>
+      <div className="bg-white rounded-3xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in duration-200 text-center">
+        <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertTriangle size={32} />
+        </div>
+        <h3 className="font-extrabold text-gray-800 text-sm mb-2">{title}</h3>
+        <p className="text-[10px] text-gray-500 mb-6 leading-relaxed">{message}</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold text-xs transition-colors">Batal</button>
+          <button onClick={() => { onConfirm(); onCancel(); }} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs shadow-md shadow-blue-600/20 transition-colors">{confirmText}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfficerDetailModal({ officer, onClose, onImageClick }) {
+  if (!officer) return null;
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm rounded-[2rem]">
+      <div className="bg-white rounded-2xl w-full max-w-xs p-5 shadow-2xl animate-in zoom-in duration-150 text-center">
+        <div className="w-20 h-20 bg-gradient-to-tr from-blue-600 to-indigo-700 text-white rounded-full flex items-center justify-center text-3xl font-extrabold mx-auto shadow-md mb-3 overflow-hidden border-2 border-white">
+          {officer.photo ? <img src={officer.photo} alt={officer.name} className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-200" onClick={() => onImageClick(officer.photo)} /> : officer.name.charAt(0)}
+        </div>
+        <h3 className="font-extrabold text-gray-800 text-lg leading-tight">{officer.name}</h3>
+        <p className="text-blue-600 font-bold text-xs uppercase mt-1 tracking-wider">{officer.role}</p>
+        <div className="bg-gray-50 rounded-xl p-3 my-4 text-left text-xs text-gray-600 space-y-2">
+          <p><strong>📞 Kontak:</strong> {officer.phone || "0812-xxxx-xxxx"}</p>
+          <p><strong>🎯 Tugas Utama:</strong> {officer.desc || "Melayani kebutuhan administrasi dan kemasyarakatan."}</p>
+        </div>
+        <button onClick={onClose} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold text-xs">Tutup</button>
+      </div>
+    </div>
+  );
+}
+
+function WargaDetailModal({ warga, onClose, isAdmin, onImageClick }) {
+  if (!warga) return null;
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm rounded-[2rem]">
+      <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in duration-200 overflow-y-auto max-h-[85%] hide-scrollbar">
+        <div className="flex justify-between items-center pb-3 border-b mb-4">
+          <h3 className="font-extrabold text-gray-800 text-sm">Detail Warga</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+
+        <div className="flex items-center gap-4 bg-blue-50/50 p-3 rounded-2xl border border-blue-100/50 mb-4">
+          <div className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white rounded-full flex items-center justify-center font-black text-xl shrink-0 border-2 border-white shadow-sm overflow-hidden">
+            {warga.photo ? <img src={warga.photo} alt={warga.name} className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-200" onClick={() => onImageClick(warga.photo)} /> : warga.name.charAt(0)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-black text-gray-800 text-sm truncate">{warga.name}</h4>
+            <p className="text-xs text-blue-600 font-bold mt-0.5">{warga.status}</p>
+          </div>
+        </div>
+
+        <div className="space-y-2.5 text-xs text-gray-700 mb-5">
+          <div className="flex justify-between border-b pb-1.5"><span className="text-gray-400">Alamat</span><span className="font-semibold text-gray-800">{warga.address}</span></div>
+          {isAdmin && <div className="flex justify-between border-b pb-1.5"><span className="text-gray-400">NIK</span><span className="font-mono font-semibold text-gray-800">{warga.nik || "-"}</span></div>}
+          <div className="flex justify-between border-b pb-1.5"><span className="text-gray-400">Gender</span><span className="font-semibold text-gray-800">{warga.gender || "Laki-laki"}</span></div>
+          <div className="flex justify-between border-b pb-1.5"><span className="text-gray-400">Agama</span><span className="font-semibold text-gray-800">{warga.religion || "Islam"}</span></div>
+          <div className="flex justify-between border-b pb-1.5"><span className="text-gray-400">Lahir</span><span className="font-semibold text-gray-800">{warga.birthDate ? new Date(warga.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : "-"}</span></div>
+          <div className="flex justify-between border-b pb-1.5"><span className="text-gray-400">Usia</span><span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{calculateAge(warga.birthDate)}</span></div>
+        </div>
+
+        {warga.isKK && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-1.5 border-b pb-1.5">
+              <Users size={16} className="text-indigo-600" />
+              <h4 className="font-bold text-xs text-gray-800 uppercase tracking-wide">Anggota Keluarga</h4>
+            </div>
+            {warga.anggotaKeluarga && warga.anggotaKeluarga.length > 0 ? (
+              <div className="space-y-2">
+                {warga.anggotaKeluarga.map((member, i) => (
+                  <div key={i} className="bg-slate-50 border border-slate-200/60 p-3 rounded-xl flex flex-col gap-1.5">
+                    <div className="flex justify-between items-center">
+                      <p className="font-extrabold text-xs text-gray-800">{member.name}</p>
+                      <span className={`text-[8px] font-black px-2.5 py-1 rounded-md text-white bg-gradient-to-r ${getHubunganBadgeColor(member.hubungan)} shadow-sm border uppercase tracking-widest shrink-0`}>
+                        {member.hubungan}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-gray-400 font-medium">
+                      {member.birthDate ? (
+                        <div className="space-y-0.5">
+                          <p>Lahir: {new Date(member.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                          <p className="font-semibold text-indigo-600">Usia: {calculateAge(member.birthDate)}</p>
+                          {isAdmin && <p className="text-[9px] font-mono text-gray-500 mt-0.5">NIK: {member.nik || "-"}</p>}
+                        </div>
+                      ) : "-"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-center text-[11px] text-gray-400 italic py-3 bg-slate-50 rounded-xl border border-dashed">Belum ada anggota.</p>}
+          </div>
+        )}
+        <button onClick={onClose} className="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl text-xs shadow-md shadow-blue-600/10">Kembali</button>
+      </div>
+    </div>
+  );
+}
+
+function DraftPreviewModal({ isOpen, draftData, onCancel, onSubmit, rtKopType, rtKopLogo, rtKopBanner, rwLeaderName }) {
+  if (!isOpen || !draftData) return null;
+  const rtValue = draftData.rt || '003';
+  const rwValue = draftData.rw || '011';
+  const leaderName = rwLeaderName || 'BAMBANG P.';
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-[2rem] overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-lg p-5 flex flex-col h-[90%] shadow-2xl animate-in zoom-in duration-200 relative">
+        <div className="flex justify-between items-center pb-3 border-b mb-4 shrink-0">
+          <h3 className="font-bold text-gray-800 text-sm">Preview Sebelum Kirim</h3>
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto border border-gray-200 p-8 bg-white shadow-inner font-serif text-[13px] text-black leading-relaxed relative">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
+            <span className="text-8xl font-black rotate-[-45deg] text-red-600 tracking-widest">DRAFT</span>
+          </div>
+
+          {rtKopType === 'banner' && (rtKopBanner || rtKopLogo) ? (
+            <div className="flex items-center pb-2 mb-1 h-[180px] overflow-hidden">
+              <img src={rtKopBanner || rtKopLogo} alt="Kop Surat" className="w-full max-h-24 object-contain" />
+            </div>
+          ) : (
+            <div className="flex items-center pb-2 mb-4 h-[180px] overflow-hidden">
+              <div className="w-[85px] shrink-0 mr-4 flex items-center justify-center">
+                <img src={rtKopLogo || "/image_385930.png"} alt="Logo" className="w-full h-auto object-contain" onError={({ currentTarget }) => { currentTarget.style.display = 'none'; }} />
+              </div>
+              <div className="flex-1 text-center pr-10">
+                <h4 className="text-[12px] font-bold tracking-wider leading-none uppercase">PEMERINTAH KABUPATEN TANGERANG</h4>
+                <h4 className="text-[11px] uppercase mt-1">KECAMATAN SEPATAN DESA PISANGAN JAYA</h4>
+                <h3 className="text-base font-black uppercase mt-2">RT. {rtValue}/RW. {rwValue}</h3>
+                <p className="text-[10px] uppercase mt-1">PERUM. GARDENIA SEPATAN</p>
+              </div>
+            </div>
+          )}
+
+          <div className="text-center mb-6">
+            <h5 className="font-bold underline text-[14px] tracking-wide uppercase">SURAT KETERANGAN/PENGANTAR</h5>
+            <p className="text-[12px] font-medium mt-0.5">Nomor : {draftData.noSurat || '[Dibuat Otomatis Jika Disetujui]'}</p>
+          </div>
+
+          <p className="mb-4 text-left text-[13px] leading-relaxed">Yang bertanda tangan dibawah ini Ketua RT. {rtValue} RW. {rwValue} Desa Pisangan Jaya Kecamatan Sepatan Kabupaten Tangerang, menerangkan bahwa :</p>
+          <div className="grid grid-cols-12 gap-y-2 mb-5 pl-4 text-[13px] relative z-10">
+            <span className="col-span-4">Nama Lengkap</span><span className="col-span-8">: &nbsp;{draftData.nama}</span>
+            <span className="col-span-4">Jenis Kelamin</span><span className="col-span-8">: &nbsp;{draftData.gender}</span>
+            <span className="col-span-4">Tempat/Tgl Lahir</span><span className="col-span-8">: &nbsp;{draftData.birthInfo}</span>
+            <span className="col-span-4">Bangsa/Agama</span><span className="col-span-8">: &nbsp;{draftData.nationalityAndReligion}</span>
+            <span className="col-span-4">Pekerjaan</span><span className="col-span-8">: &nbsp;{draftData.job}</span>
+            <span className="col-span-4">NIK</span><span className="col-span-8 font-mono">: &nbsp;{draftData.nik}</span>
+            <span className="col-span-4">Alamat Lengkap</span><span className="col-span-8 leading-tight break-words whitespace-normal">: &nbsp;{draftData.address}</span>
+            <span className="col-span-4">Keperluan</span><span className="col-span-8 font-bold">: &nbsp;{draftData.type} {draftData.keterangan ? `(${draftData.keterangan})` : ''}</span>
+          </div>
+
+          <p className="mb-4 text-left text-[13px] leading-relaxed">Nama tersebut di atas adalah benar bertempat tinggal dilingkungan kami. Mohon bantuannya dalam penyelesaian surat tersebut.</p>
+          <p className="mb-8 text-left text-[13px] leading-relaxed">Demikian surat keterangan ini dibuat dengan sebenarnya, dan dapat dipergunakan sebagaimana mestinya.</p>
+        </div>
+
+        <div className="flex gap-2 mt-4 shrink-0">
+          <button onClick={onCancel} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-xl font-bold text-sm">Kembali Sunting</button>
+          <button onClick={() => onSubmit(draftData)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold text-sm">Ajukan ke Ketua RT</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrintableLetterModal({ selectedPrintSurat, setSelectedPrintSurat, currentUserProfile, rwLeaderName, rtSignature, rtStamp, rtKopType, rtKopLogo, rtKopBanner }) {
+  const printRef = useRef(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  if (!selectedPrintSurat) return null;
+  const s = selectedPrintSurat;
+  const rtValue = s.rt || currentUserProfile?.rt || '003';
+  const rwValue = s.rw || currentUserProfile?.rw || '011';
+  const leaderName = rwLeaderName || 'BAMBANG P.';
+
+  const handlePrint = () => {
+    const inIframe = window !== window.parent;
+    if (inIframe) {
+        setIsPrinting(true); 
+        setTimeout(() => { 
+            const element = document.getElementById('printable-surat');
+            const opt = {
+              margin:       [10, 10, 10, 10], 
+              filename:     `Surat_${s.type.replace(/\s+/g, '_')}_${s.nama.replace(/\s+/g, '_')}.pdf`,
+              image:        { type: 'jpeg', quality: 0.98 },
+              html2canvas:  { 
+                scale: 2, 
+                useCORS: true, 
+                windowWidth: 794,
+                width: 794,
+                x: 0,
+                y: 0,
+                scrollX: 0, 
+                scrollY: 0 
+              },
+              jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            
+            const finishPrint = () => setIsPrinting(false);
+
+            if (window.html2pdf) {
+              window.html2pdf().set(opt).from(element).save().then(finishPrint).catch(finishPrint);
+            } else {
+              const script = document.createElement('script');
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+              script.onload = () => {
+                window.html2pdf().set(opt).from(element).save().then(finishPrint).catch(finishPrint);
+              };
+              script.onerror = finishPrint;
+              document.body.appendChild(script);
+            }
+        }, 500); 
+    } else {
+        window.print();
+    }
+  };
+
+  return (
+    <div id="print-modal" className={isPrinting ? 'fixed top-0 left-0 w-[794px] h-screen bg-white z-[99999] overflow-visible' : 'fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto'}>
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 15mm; }
+          html, body { margin: 0; padding: 0; width: 100%; height: auto !important; overflow: visible !important; background: white; }
+          body > * { display: none !important; }
+          #print-modal { display: block !important; position: static !important; background: white; padding: 0 !important; margin: 0 !important; }
+          #print-modal .print-hidden { display: none !important; }
+          #printable-surat { display: block !important; position: static !important; width: 100% !important; min-height: auto !important; height: auto !important; max-height: none !important; margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; box-shadow: none !important; border: none !important; font-family: "Times New Roman", serif !important; font-size: 12pt !important; color: black !important; }
+          #printable-surat p, #printable-surat span, #printable-surat div, #printable-surat h1, #printable-surat h2, #printable-surat h3, #printable-surat h4, #printable-surat h5, #printable-surat td { font-family: "Times New Roman", serif !important; font-size: 12pt !important; color: black !important; }
+        }
+      `}</style>
+      
+      <div id="print-container" className={isPrinting ? 'w-[794px] bg-white m-0 p-0 shadow-none border-none origin-top-left' : 'bg-white rounded-2xl w-full max-w-[95vw] lg:max-w-[1050px] p-5 flex flex-col h-[90%] shadow-2xl animate-in zoom-in duration-200'}>
+        {!isPrinting && (
+          <div className="flex justify-between items-center pb-3 border-b mb-1 shrink-0 print-hidden">
+            <h3 className="font-bold text-gray-800 text-sm">Preview Cetak Resmi (A4)</h3>
+            <div className="flex gap-2">
+              <button onClick={handlePrint} className="bg-blue-600 text-white p-2 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm">Cetak / PDF</button>
+              <button onClick={() => setSelectedPrintSurat(null)} className="bg-gray-100 text-gray-700 p-2 rounded-lg text-xs font-bold">Tutup</button>
+            </div>
+          </div>
+        )}
+        {isPrinting && <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-2 rounded-full text-xs font-bold z-[99999] shadow-lg">Memproses Dokumen...</div>}
+        <div id="printable-surat" className={`bg-white font-serif text-[12px] text-black leading-relaxed relative z-10 box-border ${isPrinting ? 'px-14 pt-8 pb-10 w-[794px] min-h-[1123px] border-0 border-none shadow-none outline-none overflow-visible' : 'flex-1 overflow-y-auto p-8 min-h-[800px] border border-gray-200 shadow-inner'}`} ref={printRef}>
+          {rtKopType === 'banner' && (rtKopBanner || rtKopLogo) ? (
+            <div className="w-full mb-1 flex justify-center pb-2 h-[180px] overflow-hidden">
+              <img src={rtKopBanner || rtKopLogo} alt="Kop Surat" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+            </div>
+          ) : (
+            <div className="flex items-center pb-2 mb-4 h-[180px] overflow-hidden">
+              <div className="w-[85px] h-full shrink-0 mr-4 flex items-center justify-center overflow-hidden">
+                <img src={rtKopLogo || "/image_385930.png"} alt="Logo" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              </div>
+              <div className="flex-1 text-center pr-10">
+                <h4 className="text-[12px] font-bold tracking-wider leading-none uppercase">PEMERINTAH KABUPATEN TANGERANG</h4>
+                <h4 className="text-[11px] uppercase mt-1">KECAMATAN SEPATAN DESA PISANGAN JAYA</h4>
+                <h3 className="text-base font-black text-black leading-none my-1.5 uppercase">RT. {rtValue}/RW. {rwValue}</h3>
+                <p className="text-[10px] font-semibold tracking-wide uppercase">PERUM. GARDENIA SEPATAN</p>
+              </div>
+            </div>
+          )}
+          <div className="text-center mb-6">
+            <h5 className="font-bold underline text-[12px] tracking-wide uppercase">SURAT KETERANGAN/PENGANTAR</h5>
+            <p className="text-[12px] font-medium mt-0.5">Nomor : {s.noSurat || "-"}</p>
+          </div>
+          <p className="mb-4 text-justify text-[12px] leading-relaxed">Yang bertanda tangan dibawah ini Ketua RT. {rtValue} RW. {rwValue} Desa Pisangan Jaya Kecamatan Sepatan Kabupaten Tangerang, menerangkan bahwa :</p>
+          <div className="grid grid-cols-12 gap-x-3 gap-y-2 mb-5 text-[12px] text-left">
+            <span className="col-span-4">Nama Lengkap</span><span className="col-span-8">: &nbsp;{s.nama}</span>
+            <span className="col-span-4">Jenis Kelamin</span><span className="col-span-8">: &nbsp;{s.gender}</span>
+            <span className="col-span-4">Tempat/Tgl Lahir</span><span className="col-span-8">: &nbsp;{s.birthInfo}</span>
+            <span className="col-span-4">Bangsa/Agama</span><span className="col-span-8">: &nbsp;{s.nationalityAndReligion}</span>
+            <span className="col-span-4">Pekerjaan</span><span className="col-span-8">: &nbsp;{s.job}</span>
+            <span className="col-span-4">NIK</span><span className="col-span-8 font-mono">: &nbsp;{s.nik}</span>
+            <span className="col-span-4">Alamat Lengkap</span><span className="col-span-8 text-[12px] leading-tight">: &nbsp;{s.address}</span>
+            <span className="col-span-4">Keperluan</span><span className="col-span-8 font-bold">: &nbsp;{s.type}</span>
+          </div>
+          <p className="mb-4 text-justify text-[12px] leading-relaxed">Nama tersebut di atas adalah benar bertempat tinggal dilingkungan kami. Mohon bantuannya dalam penyelesaian surat tersebut.</p>
+          <p className="mb-8 text-justify text-[12px] leading-relaxed">Demikian surat keterangan ini dibuat dengan sebenarnya, dan dapat dipergunakan sebagaimana mestinya.</p>
+          <div className="relative pt-4 text-[12px]">
+            <div className="flex justify-start mb-2"><span>Sepatan, {s.date}</span></div>
+            <div className="grid grid-cols-3 text-[12px] mt-4">
+              <div></div>
+              <div className="col-span-2 text-center font-semibold text-black">
+                Mengetahui,
+              </div>
+            </div>
+            <div className="grid grid-cols-3 text-center mt-2 pt-2 font-semibold font-sans">
+              <div className="relative">
+                <p className="relative z-30 font-bold text-black">Pemohon</p>
+                <div className="h-16"></div>
+                <p className="relative z-30 underline uppercase font-bold text-black">{s.nama}</p>
+              </div>
+              <div className="relative">
+                <p className="relative z-30 font-bold text-black">KETUA RT {rtValue}</p>
+                <div className="h-16 flex items-center justify-center relative select-none">
+                    <div className="absolute z-20 flex items-center justify-center w-[6.5cm] h-[4cm] translate-y-[-0.5cm]">
+                      {rtSignature ? <img src={rtSignature} alt="TTD" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', mixBlendMode: 'multiply' }} /> : null}
+                    </div>
+                    <div className="absolute z-10 rotate-[-12deg] flex items-center justify-center opacity-85 w-[5cm] h-[3cm]">
+                      {rtStamp ? <img src={rtStamp} alt="Stempel" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', mixBlendMode: 'multiply' }} /> : null}
+                    </div>
+                </div>
+                <p className="relative z-30 underline uppercase font-bold text-black">M. RIDWAN</p>
+              </div>
+              <div className="relative">
+                <p className="relative z-30 font-bold text-black">KETUA RW {rwValue}</p>
+                <div className="h-16"></div>
+                <p className="relative z-30 underline uppercase font-bold text-black">{leaderName}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* FOOTER RESMI DI BAWAH KERTAS */}
+          <div className="absolute bottom-8 left-14 right-14 text-center text-[10px] text-black border-t-[1.5px] border-black pt-2">
+            <p className="font-bold uppercase tracking-wider">Perumahan Gardenia Sepatan RT. 003 / RW. 011</p>
+            <p>Jl. Raya Mauk Km. 12 Desa Pisangan Jaya, Kec. Sepatan, Kab. Tangerang - Banten, 15520</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BirthdayWishModal({ isOpen, warga, onClose }) {
+  if (!isOpen || !warga) return null;
+  const ageDetail = calculateAge(warga.birthDate);
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm rounded-[2rem]">
+      <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 rounded-3xl w-full max-w-sm p-6 shadow-2xl border border-pink-500/30 text-center relative overflow-hidden animate-in zoom-in duration-300">
+        <div className="absolute -top-10 -left-10 w-24 h-24 bg-pink-500/20 rounded-full blur-2xl"></div>
+        <div className="absolute top-0 inset-x-0 flex justify-around opacity-30 text-white text-xs select-none"><span>✨</span><span>🎈</span><span>🎊</span><span>🎈</span><span>✨</span></div>
+        <div className="relative z-10 space-y-4">
+          <div className="text-5xl animate-bounce">🎂</div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-purple-400 to-yellow-300 uppercase tracking-widest">Selamat Ulang Tahun!</h3>
+            <p className="text-xl font-extrabold text-white leading-tight">{warga.name}</p>
+            <p className="text-[10px] text-pink-300 font-semibold uppercase tracking-wider">{warga.role}</p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 text-slate-200 text-xs leading-relaxed relative">
+            <p className="indent-4 font-medium">Kami segenap Pengurus RT03, Mengucapkan selamat ulang tahun kepada <strong className="text-yellow-300">{warga.name}</strong> semoga sehat selalu.</p>
+          </div>
+          <div className="bg-black/20 rounded-xl p-3 text-left space-y-1.5 text-[10px]">
+            <div className="flex justify-between items-start"><span className="text-slate-400">Rumah:</span><span className="text-white font-bold max-w-[180px]">{warga.address}</span></div>
+            <div className="flex justify-between items-center"><span className="text-slate-400">Usia Real-Time:</span><span className="text-yellow-300 font-extrabold">{ageDetail}</span></div>
+          </div>
+          <button onClick={onClose} className="w-full bg-gradient-to-r from-pink-500 to-purple-600 text-white font-extrabold py-3 rounded-xl text-xs shadow-lg">Aamiin Yaa Rabbal 'Aalamiin 🙏</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ComplaintModal({ isOpen, onClose, onSubmit, currentUserProfile, db, appId, showConfirm, showModalLocal }) {
+  const [category, setCategory] = useState('Infrastruktur');
+  const [desc, setDesc] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!desc.trim()) return;
+    
+    showConfirm("Kirim Pengaduan", "Apakah laporan aduan Anda sudah benar?", async () => {
+        const newId = Date.now();
+        const newComplaint = { id: newId, name: currentUserProfile.name, address: currentUserProfile.address, category, desc, status: 'pending', responses: [], date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) };
+        
+        setDesc('');
+        onClose();
+
+        try {
+          await setDoc(getDocPath('pengaduan', newId.toString()), newComplaint);
+          onSubmit();
+        } catch (err) { 
+          console.error(err); 
+          showModalLocal("Gagal", "Koneksi terputus: " + err.message, "danger");
+        }
+      }, "Ya, Kirim"
+    );
+  };
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm rounded-[2rem]">
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in duration-200">
+        <div className="flex justify-between items-center pb-3 border-b mb-4">
+          <h3 className="font-extrabold text-gray-800 text-sm">Buat Pengaduan Warga</h3>
+          <button onClick={onClose} className="text-gray-400"><X size={18} /></button>
+        </div>
+        <form onSubmit={handleFormSubmit} className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-4">Kategori Masalah</label>
+            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white">
+              <option value="Infrastruktur">Infrastruktur (Jalan, Lampu)</option><option value="Keamanan">Keamanan & Siskamling</option><option value="Kebersihan">Kebersihan & Sampah</option><option value="Sosial / Hubungan Tetangga">Sosial</option><option value="Lainnya">Lainnya</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Deskripsi Aduan</label>
+            <textarea placeholder="Tuliskan keluhan..." value={desc} onChange={e => setDesc(e.target.value)} className="w-full border rounded-lg p-2.5 text-xs outline-none h-24 resize-none" required />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-bold text-xs">Batal</button>
+            <button type="submit" className="flex-1 bg-amber-600 text-white py-2.5 rounded-xl font-bold text-xs">Kirim Aduan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function ExportDataModal({ isOpen, onClose, onConfirmExportRaw, onConfirmExportStats }) {
+  const [tab, setTab] = useState('raw'); 
+  const [rawFilter, setRawFilter] = useState('Semua');
+  const [rawCategory, setRawCategory] = useState('Usia');
+  const [rawSubCategory, setRawSubCategory] = useState('Balita');
+  const [statsFilter, setStatsFilter] = useState('Semua');
+
+  const categories = {
+    Usia: ['Balita', 'Anak', 'Remaja', 'Dewasa', 'Lansia'],
+    Gender: ['Laki-laki', 'Perempuan'],
+    Status: ['Warga Tetap', 'Warga Kontrak'],
+    Agama: ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Budha', 'Konghucu']
+  };
+
+  useEffect(() => {
+    if (categories[rawCategory]) {
+      setRawSubCategory(categories[rawCategory][0]);
+    }
+  }, [rawCategory]);
+
+  if (!isOpen) return null;
+
+  const handleDownload = () => {
+    onClose();
+    if (tab === 'raw') {
+      onConfirmExportRaw(rawFilter === 'Spesifik' ? rawSubCategory : rawFilter);
+    } else {
+      onConfirmExportStats(statsFilter);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-[2rem]">
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in duration-200">
+        <div className="flex justify-between items-center pb-3 border-b mb-4">
+          <h3 className="font-extrabold text-gray-800 text-sm flex items-center gap-2"><Download size={16} className="text-indigo-600"/> Ekspor Data CSV</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        
+        <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-xl">
+          <button onClick={() => setTab('raw')} className={`flex-1 py-2 rounded-lg text-[10px] font-bold transition-all ${tab === 'raw' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Data Mentah</button>
+          <button onClick={() => setTab('stats')} className={`flex-1 py-2 rounded-lg text-[10px] font-bold transition-all ${tab === 'stats' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Laporan Statistik</button>
+        </div>
+
+        {tab === 'raw' && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-left-2">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Cakupan Data</label>
+              <select value={rawFilter} onChange={e => setRawFilter(e.target.value)} className="w-full border border-gray-200 rounded-lg p-2.5 text-xs outline-none bg-white">
+                <option value="Semua">Semua Warga (Keluarga & Anggota)</option>
+                <option value="Kepala Keluarga">Hanya Kepala Keluarga</option>
+                <option value="Spesifik">Kriteria Spesifik (Filter)</option>
+              </select>
+            </div>
+            
+            {rawFilter === 'Spesifik' && (
+              <div className="grid grid-cols-2 gap-2 animate-in fade-in duration-200">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Kategori</label>
+                  <select value={rawCategory} onChange={e => setRawCategory(e.target.value)} className="w-full border border-gray-200 rounded-lg p-2.5 text-xs outline-none bg-white">
+                    {Object.keys(categories).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Sub-Kriteria</label>
+                  <select value={rawSubCategory} onChange={e => setRawSubCategory(e.target.value)} className="w-full border border-gray-200 rounded-lg p-2.5 text-xs outline-none bg-white">
+                    {categories[rawCategory].map(sub => <option key={sub} value={sub}>{sub}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'stats' && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-right-2">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Jenis Laporan Demografi</label>
+              <select value={statsFilter} onChange={e => setStatsFilter(e.target.value)} className="w-full border border-gray-200 rounded-lg p-2.5 text-xs outline-none bg-white">
+                <option value="Semua">Lengkap (Semua Kategori)</option>
+                <option value="Usia">Khusus Berdasarkan Usia</option>
+                <option value="Gender">Khusus Berdasarkan Gender</option>
+                <option value="Status">Khusus Berdasarkan Status Warga</option>
+                <option value="Agama">Khusus Berdasarkan Agama</option>
+              </select>
+            </div>
+            <p className="text-[9px] text-gray-400 bg-gray-50 p-2 rounded-lg border border-dashed text-justify">Format statistik akan dirangkum berdasarkan persentase, lalu diikuti oleh tabel rincian data lengkap warga di bagian bawahnya.</p>
+          </div>
+        )}
+
+        <div className="mt-5">
+          <button onClick={handleDownload} className={`w-full text-white py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-colors ${tab === 'raw' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+            <Download size={14} /> Atur & Lanjutkan
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin, adminPassword, daftarWarga }) {
+  const [nik, setNik] = useState('');
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    setTimeout(() => {
+      // 1. Cek Apakah Login sebagai Admin
+      if (nik.toLowerCase() === 'admin' || nik === '3603181005800001') {
+        if (pin === adminPassword) {
+          const adminProfile = { name: "M. Ridwan", address: "Blok A1 No. 01", rt: "03", rw: "011", komplek: "Gardenia Sepatan", status: "Warga Tetap", isKK: true, photo: "", gender: "Laki-laki", birthInfo: "Tangerang, 10 Mei 1980", nationalityAndReligion: "Indonesia / Islam", job: "PNS", nik: "3603181005800001", role: "Ketua RT" };
+          onLogin('admin', adminProfile);
+          return;
+        } else {
+          setError('Kata sandi Pengurus salah!');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // 2. Cek Apakah Login sebagai Warga
+      let foundWarga = null;
+      let isKeluargaInti = true;
+      let refIdWargaUtama = null; 
+      
+      for (const w of daftarWarga) {
+        if (w.nik === nik) {
+           foundWarga = { ...w, isKK: true, role: 'Kepala Keluarga', refId: w.id };
+           refIdWargaUtama = w.id;
+           break;
+        }
+        if (w.anggotaKeluarga) {
+           const member = w.anggotaKeluarga.find(m => m.nik === nik);
+           if (member) {
+             const { anggotaKeluarga, ...parentProfile } = w;
+             foundWarga = {
+               ...parentProfile,
+               ...member,
+               address: w.address,
+               status: w.status,
+               isKK: false,
+               role: member.hubungan,
+               refId: w.id,
+               birthInfo: member.birthInfo || w.birthInfo || member.birthDate || '',
+               nationalityAndReligion: member.nationalityAndReligion || w.nationalityAndReligion || 'Indonesia / Islam',
+               job: member.job || w.job || 'Belum Bekerja',
+               gender: member.gender || w.gender || 'Laki-laki'
+             };
+             refIdWargaUtama = w.id;
+             isKeluargaInti = false;
+             break;
+           }
+        }
+      }
+
+      if (foundWarga) {
+        const correctPin = foundWarga.pin || '123456';
+        if (pin === correctPin) {
+           foundWarga.rt = "03";
+           foundWarga.rw = "011";
+           foundWarga.komplek = "Gardenia Sepatan";
+           foundWarga.refId = refIdWargaUtama;
+           onLogin('warga', foundWarga);
+        } else {
+           setError('PIN salah! (Bawaan: 123456)');
+           setIsLoading(false);
+        }
+      } else {
+        if (daftarWarga.length === 0) {
+            setError('Sedang memuat data warga, silahkan klik masuk sekali lagi...');
+        } else {
+            setError('NIK tidak terdaftar di sistem RT 03.');
+        }
+        setIsLoading(false);
+      }
+    }, 800); 
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-0 md:p-4 font-sans antialiased">
+      <div className="w-full max-w-[400px] h-[100dvh] md:h-[850px] bg-white md:rounded-[2.5rem] shadow-2xl relative overflow-hidden flex flex-col justify-center items-center p-8 bg-gradient-to-br from-blue-50 to-indigo-50">
+        <div className="w-24 h-24 bg-white rounded-3xl shadow-lg border border-gray-100 flex items-center justify-center mb-8 rotate-3">
+          <ShieldAlert size={48} className="text-blue-600" />
+        </div>
+        <h1 className="text-2xl font-black text-gray-800 text-center mb-1">Portal RT 03</h1>
+        <p className="text-xs text-gray-500 text-center mb-2 font-medium">Perumahan Gardenia Sepatan</p>
+        
+        <div className="w-full bg-white p-5 rounded-2xl shadow-lg border border-gray-100 animate-in slide-in-from-bottom-4 mt-6">
+            <p className="text-[10px] font-bold text-gray-400 uppercase mb-4 text-center tracking-wider">Silakan Masuk</p>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">NIK Warga / ID Pengurus</label>
+                <input 
+                  type="text" 
+                  placeholder="Masukkan 16 digit NIK..." 
+                  value={nik} 
+                  onChange={(e) => { setNik(e.target.value); setError(''); }}
+                  className="w-full border border-gray-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">PIN / Kata Sandi</label>
+                <input 
+                  type="password" 
+                  placeholder="Masukkan PIN (Bawaan: 123456)" 
+                  value={pin} 
+                  onChange={(e) => { setPin(e.target.value); setError(''); }}
+                  className="w-full border border-gray-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                  required
+                />
+              </div>
+              {error && <p className="text-[10px] text-red-500 font-bold bg-red-50 p-2 rounded-lg text-center animate-in zoom-in">{error}</p>}
+              
+              <button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md text-sm mt-2 transition-all flex justify-center items-center h-12">
+                {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : 'Masuk Sistem'}
+              </button>
+            </form>
+            
+            <div className="mt-5 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                <p className="text-[9px] text-blue-800 text-center leading-relaxed font-medium">
+                    <strong>Warga:</strong> Gunakan NIK Anda dan PIN <br/>(PIN Bawaan: <span className="font-mono bg-white px-1 py-0.5 rounded border border-blue-200">123456</span>) <br/><br/>
+                    <strong>Pengurus:</strong> Ketik <span className="font-mono bg-white px-1 py-0.5 rounded border border-blue-200">admin</span> dan Kata Sandi Anda.
+                </p>
+            </div>
+        </div>
+
+        <p className="absolute bottom-6 text-[9px] text-gray-400 font-medium">© 2026 R.S Program Development</p>
+      </div>
+    </div>
+  );
+}
+
+function HomeTab({ currentUserProfile, setCurrentUserProfile, pengurusRT, announcements, daftarWarga, complaints, isAdmin, onReplyComplaint, onDeleteComplaint, setActiveTab, showModal, setSelectedOfficer, setSelectedBirthdayWarga, setIsComplaintModalOpen, setPreviewImage, db, appId }) {
+  const level1 = pengurusRT.filter(p => p.level === 1);
+  const stafAdm = pengurusRT.filter(p => p.level === 2);
+  const seksi = pengurusRT.filter(p => p.level === 3);
+
+  const [replyInputs, setReplyInputs] = useState({});
+  const [isChangingPin, setIsChangingPin] = useState(false);
+  const [newPin, setNewPin] = useState('');
+
+  const getTodayBirthdayWarga = () => {
+    const today = new Date(); 
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const matchMD = `${m}-${d}`; 
+    const list = [];
+    daftarWarga.forEach(w => {
+      if (w.birthDate && w.birthDate.endsWith(matchMD)) list.push({ id: w.id, name: w.name, role: "Kepala Keluarga", address: w.address, birthDate: w.birthDate, kkName: w.name });
+      if (w.anggotaKeluarga) w.anggotaKeluarga.forEach((m_fam, idx) => {
+        if (m_fam.birthDate && m_fam.birthDate.endsWith(matchMD)) list.push({ id: `${w.id}-member-${idx}`, name: m_fam.name, role: m_fam.hubungan, address: w.address, birthDate: m_fam.birthDate, kkName: w.name });
+      });
+    });
+    return list;
+  };
+  const birthdayWargaList = getTodayBirthdayWarga();
+
+  const handleSendReply = (complaintId) => {
+    const text = replyInputs[complaintId];
+    if (!text || text.trim() === '') return;
+    onReplyComplaint(complaintId, text);
+    setReplyInputs(prev => ({...prev, [complaintId]: ''}));
+  };
+
+  return (
+    <div className="relative p-4 space-y-6 pb-24 border-t border-gray-100 min-h-full bg-gradient-to-b from-blue-50/40 via-white to-slate-50 z-0">
+      <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-100/40 to-transparent -z-10 rounded-b-3xl"></div>
+
+      {birthdayWargaList.length > 0 && (
+        <div className="bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 p-4 rounded-2xl text-white shadow-xl shadow-pink-500/10 relative overflow-hidden border border-white/20 space-y-3 animate-in fade-in duration-300">
+          <div className="absolute -right-6 -bottom-6 opacity-10 pointer-events-none text-8xl">🎂</div>
+          <div className="relative z-10 flex justify-between items-center border-b border-white/20 pb-2">
+            <span className="text-[8px] font-black tracking-widest uppercase bg-white/20 px-2 py-0.5 rounded-full">Hari Istimewa Warga 🎉</span>
+            <span className="text-[9px] font-bold text-pink-100">{birthdayWargaList.length} Tetangga Berulang Tahun</span>
+          </div>
+          <div className="space-y-2 relative z-10 max-h-[180px] overflow-y-auto pr-1 hide-scrollbar">
+            {birthdayWargaList.map((wargaBday) => (
+              <div key={wargaBday.id} className="flex justify-between items-center gap-3 bg-white/10 p-2.5 rounded-xl border border-white/10">
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-black text-[11px] truncate">Selamat Ulang Tahun, {wargaBday.name}! 🎂</h4>
+                  <p className="text-[9px] text-pink-100 mt-0.5 font-bold">Usia: {calculateAge(wargaBday.birthDate)}</p>
+                </div>
+                <button onClick={() => setSelectedBirthdayWarga(wargaBday)} className="bg-white text-rose-600 px-2.5 py-1.5 rounded-lg text-[9px] font-black tracking-wide shrink-0 shadow-sm active:scale-95 transition-transform">Ucapan 💌</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 rounded-[1.5rem] p-5 text-white shadow-blue-900/20 shadow-2xl relative overflow-hidden border border-white/10">
+        <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.05] pointer-events-none transform -rotate-12"><ShieldAlert size={140} /></div>
+        <div className="flex justify-between items-center mb-4 relative z-10">
+          <div>
+            <p className="text-blue-100 text-xs font-medium tracking-wide">
+              {isAdmin ? 'Selamat datang Pengurus RT 03' : 'Selamat datang,'}
+            </p>
+            <h2 className="text-xl font-extrabold tracking-tight mt-0.5 drop-shadow-sm">{currentUserProfile.name}</h2>
+          </div>
+          <div className="relative shrink-0 ml-3">
+            <div className="relative block group">
+              <div className="cursor-pointer" onClick={() => currentUserProfile.photo && setPreviewImage(currentUserProfile.photo)}>
+                {currentUserProfile.photo ? <img src={currentUserProfile.photo} alt="Profile" className="w-12 h-12 rounded-full object-cover border-2 border-white/40 shadow-inner group-hover:opacity-80 transition-opacity" /> : <div className="w-12 h-12 bg-white/20 p-2.5 rounded-full border border-white/20 flex items-center justify-center"><User size={22} className="text-white" /></div>}
+              </div>
+              <label className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1 border border-blue-100 shadow-sm cursor-pointer hover:bg-blue-700 transition-colors z-10" onClick={e => e.stopPropagation()}>
+                <Camera size={10} className="text-white" />
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { 
+                  const file = e.target.files[0]; 
+                  if (file) { 
+                    const reader = new FileReader(); 
+                    reader.onload = async (ev) => { 
+                      const base64Photo = ev.target.result;
+                      const updatedProfile = { ...currentUserProfile, photo: base64Photo };
+                      setCurrentUserProfile(updatedProfile); 
+
+                      const docId = updatedProfile.refId;
+                      if (docId && db) {
+                        try {
+                          const docRef = getDocPath('warga', docId.toString());
+                          if (updatedProfile.isKK) {
+                            await setDoc(docRef, { photo: base64Photo }, { merge: true });
+                          } else {
+                            const kkDoc = daftarWarga.find(w => w.id === docId);
+                            if (kkDoc && kkDoc.anggotaKeluarga) {
+                              const updatedAnggota = kkDoc.anggotaKeluarga.map(m => m.nik === updatedProfile.nik ? { ...m, photo: base64Photo } : m);
+                              await setDoc(docRef, { anggotaKeluarga: updatedAnggota }, { merge: true });
+                            }
+                          }
+                        } catch(err) { console.error(err); }
+                      }
+                      
+                      showModal("Berhasil!", "Foto profil diperbarui & tersinkronisasi.", "success"); 
+                    }; 
+                    reader.readAsDataURL(file); 
+                  } 
+                }} />
+              </label>
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1 text-sm text-blue-50 border-t border-white/20 pt-3 relative z-10">
+          <div className="flex items-center gap-2 text-xs"><span className="bg-white/20 px-2.5 py-0.5 rounded font-bold uppercase tracking-wider">RT {currentUserProfile.rt} / RW {currentUserProfile.rw}</span><span className="font-semibold">{currentUserProfile.komplek}</span></div>
+          <span className="text-xs font-light mt-1">{currentUserProfile.address}</span>
+        </div>
+      </div>
+
+      {!isAdmin && (
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm transition-all duration-200">
+          <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsChangingPin(!isChangingPin)}>
+            <h3 className="font-bold text-xs text-gray-800 flex items-center gap-1.5"><ShieldAlert size={14} className="text-blue-500" /> Keamanan Akun (Ubah PIN)</h3>
+            <ChevronDown size={14} className={`text-gray-400 transition-transform ${isChangingPin ? 'rotate-180' : ''}`} />
+          </div>
+          {isChangingPin && (
+            <div className="mt-3 pt-3 border-t border-gray-50 flex gap-2 animate-in slide-in-from-top-2">
+              <input type="password" placeholder="Masukkan 6 Digit PIN Baru..." value={newPin} onChange={e => setNewPin(e.target.value)} maxLength={6} className="flex-1 border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-400" />
+              <button onClick={async () => {
+                if (newPin.length < 6) return showModal("Error", "PIN minimal harus 6 karakter.", "danger");
+                const docId = currentUserProfile.refId;
+                if (!docId) return showModal("Error", "Gagal menghubungkan ke data server.", "danger");
+                try {
+                  const docRef = getDocPath('warga', docId.toString());
+                  if (currentUserProfile.isKK) {
+                    await setDoc(docRef, { pin: newPin }, { merge: true });
+                  } else {
+                    const kkDoc = daftarWarga.find(w => w.id === docId);
+                    if (kkDoc && kkDoc.anggotaKeluarga) {
+                      const updatedAnggota = kkDoc.anggotaKeluarga.map(m => m.nik === currentUserProfile.nik ? { ...m, pin: newPin } : m);
+                      await setDoc(docRef, { anggotaKeluarga: updatedAnggota }, { merge: true });
+                    }
+                  }
+                  setCurrentUserProfile(prev => ({...prev, pin: newPin}));
+                  setIsChangingPin(false); setNewPin('');
+                  showModal("Sukses", "PIN berhasil diubah! Gunakan PIN ini untuk login selanjutnya.", "success");
+                } catch (err) { console.error(err); showModal("Error", "Gagal merubah PIN: " + err.message, "danger"); }
+              }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm">Simpan</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <h3 className="font-extrabold text-gray-800 text-sm mb-3">Layanan Cepat</h3>
+        <div className="grid grid-cols-4 gap-3">
+          <button onClick={() => setActiveTab('surat')} className="flex flex-col items-center gap-2 group"><div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm group-active:scale-95"><FileText size={24} /></div><span className="text-[10px] font-semibold text-gray-600 text-center leading-tight">Surat</span></button>
+          <button onClick={() => setActiveTab('warga')} className="flex flex-col items-center gap-2 group"><div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-sm group-active:scale-95"><Users size={24} /></div><span className="text-[10px] font-semibold text-gray-600 text-center leading-tight">Warga</span></button>
+          <button onClick={() => setActiveTab('demografi')} className="flex flex-col items-center gap-2 group"><div className="w-14 h-14 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm group-active:scale-95"><BarChart3 size={24} /></div><span className="text-[10px] font-semibold text-gray-600 text-center leading-tight">Demografi</span></button>
+          <button onClick={() => setIsComplaintModalOpen(true)} className="flex flex-col items-center gap-2 group"><div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center shadow-sm border-2 border-amber-200 group-active:scale-95"><AlertTriangle size={24} /></div><span className="text-[10px] font-bold text-amber-600 text-center leading-tight">Aduan</span></button>
+        </div>
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-extrabold text-gray-800 text-sm">Bagan Organisasi RT 03</h3>
+          <span className="text-[9px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-semibold">Sentuh detail</span>
+        </div>
+
+        <div className="flex flex-col items-center py-2">
+          <div className="flex justify-center gap-4 w-full max-w-xs px-2 relative z-10">
+            {level1.map(off => (
+              <div key={off.id} onClick={() => setSelectedOfficer(off)} className={`flex-1 rounded-xl p-3 text-center cursor-pointer shadow-md hover:scale-105 active:scale-95 transition-transform duration-150 flex flex-col items-center justify-center ${off.role.toLowerCase().includes('penasehat') ? 'bg-gradient-to-br from-amber-600 to-orange-700 text-white' : 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white'}`}>
+                <div className="w-10 h-10 rounded-full border-2 border-white/35 overflow-hidden mb-1.5 flex items-center justify-center bg-white/20 shrink-0">{off.photo ? <img src={off.photo} alt={off.name} className="w-full h-full object-cover" /> : <span className="font-extrabold text-xs">{off.name.charAt(0)}</span>}</div>
+                <p className="text-[7px] font-bold tracking-widest uppercase text-white/85 leading-none mb-1">{off.role}</p><h4 className="font-bold text-[10px] leading-tight truncate w-full">{off.name}</h4>
+              </div>
+            ))}
+          </div>
+
+          <div className="w-0.5 h-6 bg-indigo-200 my-0.5"></div><div className="w-48 h-0.5 bg-indigo-200 relative"><div className="absolute left-0 top-0 w-0.5 h-3 bg-indigo-200"></div><div className="absolute right-0 top-0 w-0.5 h-3 bg-indigo-200"></div></div>
+
+          <div className="flex justify-between w-full max-w-xs px-2 mt-2 gap-4">
+            {stafAdm.map(staff => (
+              <div key={staff.id} onClick={() => setSelectedOfficer(staff)} className={`flex-1 rounded-xl p-3 text-center cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition-transform duration-150 flex flex-col items-center justify-center relative z-10 ${staff.role.toLowerCase().includes('sekretaris') ? 'bg-indigo-50 border border-indigo-200 text-indigo-900' : 'bg-emerald-50 border border-emerald-200 text-emerald-900'}`}>
+                <div className={`w-9 h-9 rounded-full border-2 overflow-hidden mb-1.5 flex items-center justify-center shrink-0 ${staff.role.toLowerCase().includes('sekretaris') ? 'border-indigo-200 bg-indigo-100 text-indigo-700' : 'border-emerald-200 bg-emerald-100 text-emerald-700'}`}>{staff.photo ? <img src={staff.photo} alt={staff.name} className="w-full h-full object-cover" /> : <span className="font-extrabold text-xs">{staff.name.charAt(0)}</span>}</div>
+                <p className="text-[7px] font-extrabold tracking-wider uppercase text-gray-400 leading-none mb-1">{staff.role}</p><h4 className="font-extrabold text-[10px] truncate w-full">{staff.name}</h4>
+              </div>
+            ))}
+          </div>
+
+          <div className="w-0.5 h-6 bg-indigo-200 my-0.5"></div><div className="w-48 h-0.5 bg-indigo-200 relative"><div className="absolute left-0 top-0 w-0.5 h-3 bg-indigo-200"></div><div className="absolute right-0 top-0 w-0.5 h-3 bg-indigo-200"></div></div>
+
+          <div className="flex justify-between w-full max-w-xs px-2 mt-2 gap-4">
+            {seksi.map(sec => (
+              <div key={sec.id} onClick={() => setSelectedOfficer(sec)} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl p-3 text-center cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition-transform duration-150 flex flex-col items-center justify-center relative z-10">
+                <div className="w-9 h-9 rounded-full border-2 border-slate-200 bg-slate-100 text-slate-700 overflow-hidden mb-1.5 flex items-center justify-center shrink-0">{sec.photo ? <img src={sec.photo} alt={sec.name} className="w-full h-full object-cover" /> : <span className="font-extrabold text-xs">{sec.name.charAt(0)}</span>}</div>
+                <p className="text-[7px] font-extrabold tracking-wider uppercase text-slate-400 leading-none mb-1">{sec.role}</p><h4 className="font-extrabold text-[10px] truncate w-full text-slate-800">{sec.name}</h4>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-extrabold text-gray-800 text-sm">Pengumuman RT03</h3>
+        </div>
+        <div className="space-y-3">
+          {announcements.map(ann => (
+            <div key={ann.id} className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm flex items-start gap-4">
+              <div className={`p-2 rounded-lg shrink-0 ${ann.type === 'warning' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}><Bell size={20} /></div>
+              <div className="flex-1 min-w-0"><h4 className="font-semibold text-gray-800 text-sm leading-snug whitespace-pre-wrap break-words">{ann.title}</h4><p className="text-[10px] text-gray-400 mt-1">{ann.date}</p></div>
+            </div>
+          ))}
+          {announcements.length === 0 && <p className="text-center text-xs text-gray-400 py-2 italic bg-white rounded-xl border border-dashed">Belum ada pengumuman.</p>}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-extrabold text-gray-800 text-sm">Forum Pengaduan Warga</h3>
+        </div>
+        <div className="space-y-4">
+          {complaints.map(complaint => (
+            <div key={complaint.id} className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm flex flex-col gap-2">
+              <div className="flex justify-between items-start">
+                <div>
+                  <span className="bg-amber-100 text-amber-800 text-[8px] px-2 py-0.5 rounded font-black uppercase tracking-wider">{complaint.category}</span>
+                  <h4 className="font-bold text-sm text-gray-800 mt-1.5">{complaint.desc}</h4>
+                  <p className="text-[10px] text-gray-500 mt-1">Oleh: <span className="font-semibold">{complaint.name}</span> ({complaint.address}) | {complaint.date}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(isAdmin || currentUserProfile.name === complaint.name) && (
+                    <button onClick={() => onDeleteComplaint(complaint.id)} className="text-red-500 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors text-[10px] font-bold">Hapus</button>
+                  )}
+                  <span className={`text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider ${complaint.status === 'selesai' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
+                    {complaint.status === 'selesai' ? 'Selesai' : 'Pending'}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="mt-2 pt-3 border-t border-gray-50 space-y-2">
+                {(complaint.responses || []).map((res, i) => (
+                  <div key={i} className={`p-2.5 rounded-xl text-xs flex flex-col gap-1 w-fit max-w-[85%] ${res.admin ? 'bg-blue-50 text-blue-900 border border-blue-100 self-start' : 'bg-gray-100 text-gray-800 border border-gray-200 self-end ml-auto'}`}>
+                    <span className="text-[9px] font-extrabold opacity-60 uppercase">{res.admin || res.warga}</span>
+                    <span>{res.text}</span>
+                  </div>
+                ))}
+                
+                {complaint.status !== 'selesai' && (
+                  <div className="flex items-center gap-2 mt-2 pt-2">
+                    <input 
+                      type="text" 
+                      placeholder="Tulis komentar atau tanyakan ke pengurus..." 
+                      className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-400"
+                      value={replyInputs[complaint.id] || ''}
+                      onChange={e => setReplyInputs({...replyInputs, [complaint.id]: e.target.value})}
+                      onKeyDown={(e) => {
+                        if(e.key === 'Enter') handleSendReply(complaint.id);
+                      }}
+                    />
+                    <button 
+                      onClick={() => handleSendReply(complaint.id)}
+                      className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 shadow-sm"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </div>
+                )}
+                {complaint.status === 'selesai' && (
+                  <p className="text-[9px] text-gray-400 mt-1">Aduan sudah diselesaikan; diskusi hanya tersedia untuk topik terbuka.</p>
+                )}
+              </div>
+            </div>
+          ))}
+          {complaints.length === 0 && <p className="text-center text-xs text-gray-400 py-3 italic bg-white rounded-xl border border-dashed">Belum ada diskusi pengaduan.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SuratTab({ currentUserProfile, suratRequests, setSelectedPrintSurat, showModal, rtKopType, rtKopLogo, rtKopBanner, rwLeaderName, db, appId, showConfirm, handleDeleteSurat }) {
+  const [selectedType, setSelectedType] = useState('');
+  const [draftPreview, setDraftPreview] = useState(null);
+  const [formData, setFormData] = useState({
+    nama: currentUserProfile.name,
+    gender: currentUserProfile.gender,
+    birthInfo: currentUserProfile.birthInfo,
+    nationalityAndReligion: currentUserProfile.nationalityAndReligion,
+    job: currentUserProfile.job,
+    nik: currentUserProfile.nik,
+    address: currentUserProfile.address,
+    customType: '',
+    keterangan: ''
+  });
+
+  useEffect(() => {
+    setFormData(prev => ({ ...prev, nama: currentUserProfile.name, gender: currentUserProfile.gender, birthInfo: currentUserProfile.birthInfo, nationalityAndReligion: currentUserProfile.nationalityAndReligion, job: currentUserProfile.job, nik: currentUserProfile.nik, address: currentUserProfile.address }));
+  }, [currentUserProfile]);
+
+  const handlePreviewClick = (e) => {
+    e.preventDefault();
+    let type = selectedType === 'Lainnya' ? formData.customType.trim() : selectedType;
+    if (!type) return showModal("Error", "Pilih keperluan terlebih dahulu.", "danger");
+    if (formData.nik.length !== 16) return showModal("Peringatan", "NIK harus berisikan tepat 16 digit.", "warning");
+
+    const fullOfficialAddress = `${formData.address.trim()}, Perum Gardenia Sepatan RT.003/RW.011 Desa Pisangan Jaya Kec. Sepatan Kab. Tangerang, Provinsi Banten, 15520`;
+    setDraftPreview({ id: Date.now(), type: type, date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }), status: "pending", ...formData, address: fullOfficialAddress });
+  };
+
+  const submitSuratFinal = (draft) => {
+    showConfirm("Pengajuan Surat", "Pastikan identitas dan keperluan sudah benar.", async () => {
+        try {
+          await setDoc(getDocPath('surat', draft.id.toString()), draft);
+          setDraftPreview(null);
+          showModal("Berhasil!", "Surat diajukan ke Admin RT.", "success");
+        } catch (err) { 
+            console.error(err); 
+            showModal("Gagal", "Koneksi terputus: " + err.message, "danger");
+        }
+      }, "Ajukan"
+    );
+  };
+
+  const mySurat = suratRequests.filter(s => s.nama === currentUserProfile.name || s.nama === formData.nama);
+
+  return (
+    <div className="p-4 pb-24 border-t border-gray-100">
+      <h2 className="text-xl font-bold text-gray-800 mb-1">Pengajuan Surat</h2>
+      <p className="text-gray-500 text-xs mb-5">Lengkapi identitas Anda. Alamat resmi otomatis tergabung.</p>
+      
+      <form onSubmit={handlePreviewClick} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6 space-y-4">
+        <div className="bg-gray-50/60 p-4 rounded-xl border border-gray-200 space-y-3">
+          <h3 className="font-bold text-xs text-gray-800 uppercase mb-2 tracking-wide">Identitas Pemohon</h3>
+          <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Nama Lengkap (KTP)</label><input type="text" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white focus:ring-1 focus:ring-blue-500" required /></div>
+          <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">NIK (16 Digit)</label><input type="text" value={formData.nik} onChange={e => setFormData({...formData, nik: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs font-mono outline-none bg-white focus:ring-1 focus:ring-blue-500" required /></div>
+          <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Blok dan Nomor Rumah</label><input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white focus:ring-1 focus:ring-blue-500 font-medium" required /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Tempat/Tgl Lahir</label><input type="text" value={formData.birthInfo} onChange={e => setFormData({...formData, birthInfo: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white" required /></div>
+            <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Jenis Kelamin</label><select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Bangsa/Agama</label><input type="text" value={formData.nationalityAndReligion} onChange={e => setFormData({...formData, nationalityAndReligion: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white" required /></div>
+            <div><label className="block text-[9px] font-bold text-gray-500 uppercase mb-1">Pekerjaan</label><input type="text" value={formData.job} onChange={e => setFormData({...formData, job: e.target.value})} className="w-full border rounded-lg p-2.5 text-xs outline-none bg-white" required /></div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-700 uppercase mb-2">Jenis Keperluan</label>
+          <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="w-full border border-gray-200 rounded-xl p-3 bg-white text-sm outline-none mb-3">
+            <option value="">-- Pilih Keperluan --</option><option value="Pembuatan KTP">Pembuatan KTP/KK</option><option value="Surat Keterangan Domisili">Surat Keterangan Domisili</option><option value="Surat Keterangan Tidak Mampu">Surat Keterangan Tidak Mampu (SKTM)</option><option value="Pengantar Nikah">Pengantar Nikah</option><option value="Surat Keterangan Usaha">Surat Keterangan Usaha</option><option value="Lainnya">Lainnya (Ketik Manual)</option>
+          </select>
+          {selectedType === 'Lainnya' && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-150">
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">Tulis Keperluan Manual</label>
+              <input type="text" placeholder="Ketik keperluan manual..." value={formData.customType} onChange={e => setFormData({...formData, customType: e.target.value})} className="w-full border rounded-xl p-3 text-sm outline-none mb-3" required />
+            </div>
+          )}
+          <label className="block text-xs font-bold text-gray-700 uppercase mb-1.5">Keterangan Tambahan</label>
+          <textarea placeholder="Opsional..." value={formData.keterangan} onChange={e => setFormData({...formData, keterangan: e.target.value})} className="w-full border rounded-xl p-3 text-sm outline-none h-20 resize-none"></textarea>
+        </div>
+        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md text-sm">Preview Surat</button>
+      </form>
+
+      <h3 className="font-bold text-gray-800 text-sm mb-3">Riwayat Pengajuan</h3>
+      <div className="space-y-3">
+        {mySurat.length === 0 ? (
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-dashed border-gray-200 text-center text-xs text-gray-500">
+            Belum ada pengajuan surat. Ajukan surat terlebih dahulu untuk menampilkan tombol Hapus.
+          </div>
+        ) : mySurat.map(surat => (
+          <div key={surat.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-bold text-sm text-gray-800 truncate">{surat.type}</p>
+              <p className="text-[10px] text-gray-400 mt-1">{surat.date}</p>
+            </div>
+            <div className="flex flex-col items-end gap-2 shrink-0 min-w-[120px]">
+              <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold ${surat.status === 'selesai' ? 'text-blue-600 bg-blue-50' : surat.status === 'ditolak' ? 'text-red-600 bg-red-50' : 'text-orange-600 bg-orange-50'}`}>
+                {surat.status === 'selesai' ? <CheckCircle size={11} /> : surat.status === 'ditolak' ? <XCircle size={11} /> : <Clock size={11} />}
+                <span className="capitalize">{surat.status}</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 mt-1">
+                {surat.status === 'selesai' && (
+                  <button type="button" onClick={() => setSelectedPrintSurat(surat)} className="bg-gray-50 border hover:bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-[9px] font-bold flex items-center gap-1 shadow-sm"><Printer size={10} /> Cetak</button>
+                )}
+                <button type="button" onClick={() => handleDeleteSurat(surat.id)} className="bg-red-50 border border-red-200 text-red-600 px-2 py-1 rounded-md text-[9px] font-bold hover:bg-red-100 shadow-sm flex items-center gap-1" title="Hapus pengajuan surat ini"><Trash2 size={10} /> Hapus</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <DraftPreviewModal isOpen={draftPreview !== null} draftData={draftPreview} onCancel={() => setDraftPreview(null)} onSubmit={submitSuratFinal} rtKopType={rtKopType} rtKopLogo={rtKopLogo} rtKopBanner={rtKopBanner} rwLeaderName={rwLeaderName} />
+    </div>
+  );
+}
+
+function WargaTab({ daftarWarga, setSelectedWargaDetail }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('Semua');
+
+  const totalKK = daftarWarga.filter(w => w.isKK).length;
+  // Perhitungan total jiwa = 1 (Kepala Keluarga) + jumlah anggota keluarganya
+  const totalWarga = daftarWarga.reduce((acc, w) => acc + 1 + (w.anggotaKeluarga?.length || 0), 0);
+
+  const filteredWarga = daftarWarga.filter(w => {
+    const matchSearch = w.name.toLowerCase().includes(searchQuery.toLowerCase()) || w.address.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchStatus = filterStatus === 'Semua' || w.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  return (
+    <div className="p-4 pb-24 border-t border-gray-100">
+      <h2 className="text-xl font-bold text-gray-800 mb-1">Warga RT 03/RW 011</h2>
+      <p className="text-gray-500 text-xs mb-5">Data terintegrasi seluruh warga Perumahan Gardenia Sepatan.</p>
+      
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-4 rounded-2xl text-white shadow-md shadow-blue-500/10">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-100 block">Total Warga KK</span>
+          <span className="text-2xl font-black mt-1 block">{totalKK} <span className="text-xs font-normal">KK</span></span>
+        </div>
+        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-4 rounded-2xl text-white shadow-md shadow-emerald-500/10">
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-100 block">Total Jiwa Terdaftar</span>
+          <span className="text-2xl font-black mt-1 block">{totalWarga} <span className="text-xs font-normal">Jiwa</span></span>
+        </div>
+      </div>
+
+      <div className="space-y-3 mb-5">
+        <div className="relative">
+          <input type="text" placeholder="Cari nama atau blok..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border border-gray-200 rounded-xl py-3 pl-11 pr-4 outline-none focus:ring-1 focus:ring-blue-600 text-sm shadow-sm" />
+          <Search className="absolute left-3.5 top-3.5 text-gray-400" size={18} />
+        </div>
+        <div className="flex gap-2">
+          {['Semua', 'Warga Tetap', 'Warga Kontrak'].map(status => (
+            <button key={status} onClick={() => setFilterStatus(status)} className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border ${filterStatus === status ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/20' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>{status}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {filteredWarga.map(warga => (
+          <div key={warga.id} onClick={() => setSelectedWargaDetail(warga)} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-between gap-3 hover:border-blue-300 hover:shadow-md cursor-pointer transition-all active:scale-98">
+            <div className="flex items-start justify-between gap-4 w-full">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-12 h-12 relative shrink-0 flex items-center justify-center rounded-full overflow-hidden bg-slate-100 border border-gray-200">
+                  {warga.photo ? <img src={warga.photo} alt={warga.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-blue-50 text-blue-600 rounded-full flex items-center justify-center font-black text-lg">{warga.name.charAt(0)}</div>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2"><h4 className="font-bold text-sm text-gray-800 truncate leading-tight">{warga.name}</h4>{warga.isKK && <span className="bg-blue-100 text-blue-700 text-[8px] px-1.5 py-0.5 rounded-md font-extrabold shrink-0 uppercase tracking-wide">KK</span>}</div>
+                  <p className="text-xs text-gray-500 mt-1 truncate">{warga.address}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-50 pt-2 w-full">
+              <span className={`inline-block text-[9px] px-2 py-0.5 rounded-full font-bold ${warga.status === 'Warga Tetap' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{warga.status}</span>
+              {warga.birthDate && <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full font-bold">{calculateAge(warga.birthDate)}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DemografiTab({ daftarWarga }) {
+  const [activeSubTab, setActiveTabFilter] = useState('usia'); 
+  const [selectedSegment, setSelectedSegment] = useState(null);
+
+  const compileAllIndividuals = () => {
+    const list = [];
+    daftarWarga.forEach(w => {
+      list.push({ id: w.id, name: w.name, address: w.address, status: w.status, gender: w.gender || "Laki-laki", religion: w.religion || "Islam", birthDate: w.birthDate, role: "Kepala Keluarga" });
+      if (w.anggotaKeluarga && w.anggotaKeluarga.length > 0) {
+        w.anggotaKeluarga.forEach((m, idx) => {
+          list.push({ id: `${w.id}-member-${idx}`, name: m.name, address: w.address, status: w.status, gender: m.gender || (m.hubungan?.toLowerCase().includes('istri') ? 'Perempuan' : 'Laki-laki'), religion: m.religion || w.religion || "Islam", birthDate: m.birthDate, role: m.hubungan });
+        });
+      }
+    });
+    return list;
+  };
+
+  const allIndividuals = compileAllIndividuals();
+  const totalJiwa = allIndividuals.length;
+
+  const segments = {
+    usia: [{ key: 'balita', label: 'Balita (0-5 Th)', color: 'bg-rose-500' }, { key: 'anak', label: 'Anak (6-12 Th)', color: 'bg-orange-500' }, { key: 'remaja', label: 'Remaja (13-17 Th)', color: 'bg-amber-500' }, { key: 'dewasa', label: 'Dewasa (18-59 Th)', color: 'bg-emerald-500' }, { key: 'lansia', label: 'Lansia (60+ Th)', color: 'bg-indigo-500' }],
+    gender: [{ key: 'Laki-laki', label: 'Laki-Laki', color: 'bg-blue-500' }, { key: 'Perempuan', label: 'Perempuan', color: 'bg-pink-500' }],
+    status: [{ key: 'Warga Tetap', label: 'Warga Tetap', color: 'bg-teal-500' }, { key: 'Warga Kontrak', label: 'Warga Kontrak', color: 'bg-amber-500' }],
+    agama: [{ key: 'Islam', label: 'Islam', color: 'bg-emerald-500' }, { key: 'Kristen', label: 'Kristen', color: 'bg-sky-500' }, { key: 'Katolik', label: 'Katolik', color: 'bg-purple-500' }, { key: 'Hindu', label: 'Hindu', color: 'bg-orange-600' }, { key: 'Budha', label: 'Budha', color: 'bg-yellow-500' }, { key: 'Konghucu', label: 'Konghucu', color: 'bg-red-500' }]
+  };
+
+  const getCategorizedList = (category, key) => {
+    return allIndividuals.filter(person => {
+      if (category === 'usia') { const age = getAgeInYears(person.birthDate); if (key === 'balita') return age <= 5; if (key === 'anak') return age >= 6 && age <= 12; if (key === 'remaja') return age >= 13 && age <= 17; if (key === 'dewasa') return age >= 18 && age <= 59; if (key === 'lansia') return age >= 60; }
+      if (category === 'gender') return person.gender === key;
+      if (category === 'status') return person.status === key;
+      if (category === 'agama') return person.religion === key;
+      return false;
+    });
+  };
+
+  useEffect(() => {
+    if (segments[activeSubTab] && segments[activeSubTab].length > 0) {
+      setSelectedSegment({ category: activeSubTab, key: segments[activeSubTab][0].key, label: segments[activeSubTab][0].label });
+    }
+  }, [activeSubTab]);
+
+  const drilldownList = selectedSegment ? getCategorizedList(selectedSegment.category, selectedSegment.key) : [];
+
+  return (
+    <div className="p-4 pb-24 border-t border-gray-100 animate-in fade-in duration-200">
+      <h2 className="text-xl font-bold text-gray-800 mb-1">Demografi Warga</h2>
+      <p className="text-gray-500 text-xs mb-5">Analisis statistik populasi warga RT 03/RW 011 secara real-time.</p>
+
+      <div className="grid grid-cols-4 gap-1.5 mb-5 bg-gray-100 p-1 rounded-xl">
+        {[{ id: 'usia', label: 'Usia' }, { id: 'gender', label: 'Gender' }, { id: 'status', label: 'Status' }, { id: 'agama', label: 'Agama' }].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTabFilter(tab.id)} className={`py-2 rounded-lg text-[10px] font-black tracking-wide uppercase transition-all ${activeSubTab === tab.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{tab.label}</button>
+        ))}
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm mb-6 space-y-4">
+        <div className="flex justify-between items-center border-b pb-2 mb-2">
+          <h3 className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">Statistik Distribusi</h3>
+          <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold">Total: {totalJiwa} Jiwa</span>
+        </div>
+        {segments[activeSubTab].map(seg => {
+          const count = getCategorizedList(activeSubTab, seg.key).length;
+          const pct = totalJiwa > 0 ? Math.round((count / totalJiwa) * 100) : 0;
+          return (
+            <div key={seg.key} onClick={() => setSelectedSegment({ category: activeSubTab, key: seg.key, label: seg.label })} className={`group cursor-pointer p-2 rounded-xl transition-all ${selectedSegment?.key === seg.key ? 'bg-indigo-50/50 border border-indigo-100' : 'hover:bg-slate-50'}`}>
+              <div className="flex justify-between items-center text-xs font-bold text-gray-700 mb-1.5"><span className="flex items-center gap-1.5"><span className={`w-2.5 h-2.5 rounded-full ${seg.color}`}></span>{seg.label}</span><span>{count} Jiwa ({pct}%)</span></div>
+              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden"><div className={`h-full rounded-full ${seg.color} transition-all duration-500`} style={{ width: pct + '%' }}></div></div>
+            </div>
+          );
+        })}
+      </div>
+
+      {selectedSegment && (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1"><Users size={16} className="text-indigo-600" /> Detail: {selectedSegment.label}</h3>
+            <span className="text-[10px] font-black bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-full">{drilldownList.length} Jiwa</span>
+          </div>
+          <div className="space-y-2">
+            {drilldownList.map(person => (
+              <div key={person.id} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center gap-3">
+                <div className="min-w-0"><h4 className="font-extrabold text-xs text-gray-800 truncate">{person.name}</h4><p className="text-[10px] text-gray-400 mt-0.5 truncate">{person.address} | <span className="font-semibold text-gray-600">{person.role}</span></p></div>
+                <div className="text-right shrink-0 flex flex-col items-end gap-1"><span className="text-[9px] font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full uppercase">{calculateAge(person.birthDate)}</span></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminTab({ 
+  suratRequests, pengurusRT, daftarWarga, complaints, announcements,
+  setIsAdmin, setActiveTab, showModal, setSelectedPrintSurat, 
+  rtSignature, setRtSignature, rtStamp, setRtStamp, 
+  rtKopType, setRtKopType, rtKopLogo, setRtKopLogo, rtKopBanner, setRtKopBanner,
+  rwLeaderName, setRwLeaderName,
+  db, appId, showConfirm, adminPassword
+}) {
+  const [editingOfficer, setEditingOfficer] = useState(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newOfficer, setNewOfficer] = useState({ name: '', role: '', phone: '', desc: '', level: 3, photo: '', wargaId: '' });
+
+  const [isAddingWarga, setIsAddingWarga] = useState(false);
+  const [editingWargaId, setEditingWargaId] = useState(null);
+  const [newWarga, setNewWarga] = useState({ name: '', nik: '', address: '', status: 'Warga Tetap', isKK: true, birthDate: '', gender: 'Laki-laki', religion: 'Islam' });
+  const [familyMembersInput, setFamilyMembersInput] = useState([{ name: '', nik: '', hubungan: 'Istri', birthDate: '', gender: 'Perempuan', religion: 'Islam' }]);
+  const [rwEditName, setRwEditName] = useState(rwLeaderName || 'BAMBANG P.');
+
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isAddingAnnouncement, setIsAddingAnnouncement] = useState(false);
+  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', type: 'info' });
+
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  useEffect(() => {
+    setRwEditName(rwLeaderName || 'BAMBANG P.');
+  }, [rwLeaderName]);
+
+  const handleSaveRwLeader = async (e) => {
+    e.preventDefault();
+    if (!rwEditName.trim()) return showModal("Error", "Nama Ketua RW tidak boleh kosong.", "danger");
+    showConfirm("Simpan Nama Ketua RW", "Nama Ketua RW akan tersimpan sebagai teks dinamis di template surat.", async () => {
+      try {
+        await setDoc(getDocPath('settings', 'admin_config'), { rwLeaderName: rwEditName.trim() }, { merge: true });
+        setRwLeaderName(rwEditName.trim());
+        showModal("Sukses", "Nama Ketua RW berhasil disimpan.", "success");
+      } catch (err) {
+        console.error(err);
+        showModal("Gagal", "Tidak dapat menyimpan: " + err.message, "danger");
+      }
+    }, "Simpan");
+  };
+  const [pwdForm, setPwdForm] = useState({ old: '', new: '', confirm: '' });
+
+  const allCitizens = [];
+  daftarWarga.forEach(w => {
+    allCitizens.push({ ...w, refId: w.id.toString() });
+    if (w.anggotaKeluarga) {
+      w.anggotaKeluarga.forEach((m, idx) => {
+        allCitizens.push({ ...m, refId: `${w.id}_${idx}`, address: w.address });
+      });
+    }
+  });
+
+  const intToRoman = (value) => {
+    if (value <= 0) return '0';
+    const romanNumerals = [
+      [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+      [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+      [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+    ];
+    let result = '';
+    let num = value;
+    for (const [intVal, roman] of romanNumerals) {
+      while (num >= intVal) {
+        result += roman;
+        num -= intVal;
+      }
+    }
+    return result;
+  };
+
+  const handleApprove = async (id, newStatus) => {
+    showConfirm("Persetujuan Surat", `Apakah Anda yakin ingin memproses surat ini menjadi ${newStatus}?`, async () => {
+      try {
+        const now = new Date();
+        const sequenceIndex = suratRequests.filter((s) => s.status === 'selesai').length;
+        const sequence = intToRoman(sequenceIndex);
+        const monthRoman = intToRoman(now.getMonth() + 1);
+        const year = now.getFullYear();
+        const noSurat = newStatus === 'selesai' ? `${sequence}/SK/GS.03/${monthRoman}/${year}` : '';
+        const targetSurat = suratRequests.find(s => s.id === id);
+        if(targetSurat) {
+          await setDoc(getDocPath('surat', id.toString()), { ...targetSurat, status: newStatus, noSurat }, { merge: true });
+          showModal("Sukses", `Surat diproses.`, "success");
+        }
+      } catch (err) { 
+        console.error(err); 
+        showModal("Gagal", "Koneksi terputus: " + err.message, "danger");
+      }
+    }, "Ya, Lanjutkan");
+  };
+
+  const handleDeleteSurat = async (id) => {
+    showConfirm("Hapus Arsip Surat", "Apakah Anda yakin ingin menghapus arsip surat ini? Tindakan ini tidak dapat dikembalikan.", async () => {
+      try {
+        await deleteDoc(getDocPath('surat', id.toString()));
+        showModal("Berhasil", "Arsip surat telah dihapus.", "success");
+      } catch (err) {
+        console.error(err);
+        showModal("Gagal", "Tidak dapat menghapus arsip surat: " + err.message, "danger");
+      }
+    }, "Hapus");
+  };
+
+  const handleAddOfficer = (e) => {
+    e.preventDefault();
+    if (!newOfficer.name || !newOfficer.role) return showModal("Error", "Nama dan Jabatan wajib diisi.", "danger");
+    showConfirm("Tambah Pengurus?", "Tambahkan pengurus ini ke struktur?", async () => {
+      try {
+        const newId = Date.now();
+        await setDoc(getDocPath('pengurus', newId.toString()), { ...newOfficer, id: newId, level: Number(newOfficer.level) });
+        setIsAdding(false);
+        setNewOfficer({ name: '', role: '', phone: '', desc: '', level: 3, photo: '' });
+        showModal("Sukses", "Pengurus ditambahkan!", "success");
+      } catch (err) { 
+        console.error(err); 
+        showModal("Gagal", "Koneksi terputus: " + err.message, "danger");
+      }
+    }, "Tambahkan");
+  };
+
+  const handleEditWargaClick = (w) => {
+    setEditingWargaId(w.id);
+    setNewWarga({
+      name: w.name || '',
+      nik: w.nik || '',
+      address: w.address || '',
+      status: w.status || 'Warga Tetap',
+      isKK: w.isKK !== undefined ? w.isKK : true,
+      birthDate: w.birthDate || '',
+      gender: w.gender || 'Laki-laki',
+      religion: w.religion || 'Islam'
+    });
+    setFamilyMembersInput(w.anggotaKeluarga && w.anggotaKeluarga.length > 0 ? w.anggotaKeluarga : [{ name: '', nik: '', hubungan: 'Istri', birthDate: '', gender: 'Perempuan', religion: 'Islam' }]);
+    setIsAddingWarga(true);
+  };
+
+  const confirmAddWarga = (e) => {
+    e.preventDefault();
+    if (!newWarga.name || !newWarga.address) return showModal("Error", "Nama dan Alamat wajib.", "danger");
+    const isEdit = editingWargaId !== null;
+    showConfirm(
+      isEdit ? "Simpan Perubahan" : "Konfirmasi Penyimpanan", 
+      isEdit ? "Perubahan data warga akan disimpan ke sistem." : "Data Anda akan diproses dan disimpan secara permanen ke Firebase Cloud.", 
+      async () => {
+        try {
+          const finalFamily = newWarga.isKK ? familyMembersInput.filter(m => m.name.trim() !== '') : [];
+          const targetId = isEdit ? editingWargaId : Date.now();
+          const existingWarga = isEdit ? daftarWarga.find(w => w.id === targetId) : null;
+          
+          const wBaru = { 
+            ...existingWarga, 
+            ...newWarga, 
+            id: targetId, 
+            photo: isEdit && existingWarga ? existingWarga.photo : "", 
+            anggotaKeluarga: finalFamily 
+          };
+          
+          await setDoc(getDocPath('warga', wBaru.id.toString()), wBaru);
+          
+          setIsAddingWarga(false);
+          setEditingWargaId(null);
+          setNewWarga({ name: '', nik: '', address: '', status: 'Warga Tetap', isKK: true, birthDate: '', gender: 'Laki-laki', religion: 'Islam' });
+          setFamilyMembersInput([{ name: '', nik: '', hubungan: 'Istri', birthDate: '', gender: 'Perempuan', religion: 'Islam' }]);
+          showModal("Sukses", isEdit ? "Data warga berhasil diperbarui!" : "Data keluarga berhasil disimpan permanen di Cloud!", "success");
+      } catch (err) { 
+          console.error(err); 
+          showModal("Gagal Menyimpan", "Koneksi terputus: " + err.message, "danger");
+      }
+    }, 
+    isEdit ? "Simpan" : "Proses & Simpan"
+  );
+};
+
+const confirmExportCSV = (filterType) => {
+  showConfirm(
+    "Persiapan Unduh CSV", 
+    `Data Anda akan diproses. Anda akan mengunduh data mentah warga dengan kategori: ${filterType}.`, 
+    () => handleExportCSV(filterType), 
+    "Proses & Unduh"
+  );
+};
+  const confirmExportDemografiCSV = (selectedCategory) => {
+    showConfirm(
+      "Persiapan Unduh CSV", 
+      `Statistik demografi beserta rincian data lengkap akan diproses untuk kategori: ${selectedCategory}.`, 
+      () => handleExportDemografiCSV(selectedCategory), 
+      "Proses & Unduh"
+    );
+  };
+
+  const handleExportCSV = (filterType) => {
+    let exportData = [];
+    const formatNikUntukExcel = (nik) => (nik && nik !== '-') ? `"'${nik}"` : '-';
+
+    daftarWarga.forEach(warga => {
+      exportData.push({ name: warga.name, nik: formatNikUntukExcel(warga.nik), address: warga.address, status: warga.status, role: 'Kepala Keluarga', gender: warga.gender || 'Laki-laki', religion: warga.religion || 'Islam', birthDate: warga.birthDate });
+      if (warga.anggotaKeluarga) {
+        warga.anggotaKeluarga.forEach(member => {
+          exportData.push({ name: member.name, nik: formatNikUntukExcel(member.nik), address: warga.address, status: warga.status, role: member.hubungan, gender: member.gender || 'Laki-laki', religion: member.religion || 'Islam', birthDate: member.birthDate });
+        });
+      }
+    });
+
+    if (filterType !== 'Semua') {
+      exportData = exportData.filter(person => {
+        if (['Balita', 'Anak', 'Remaja', 'Dewasa', 'Lansia'].includes(filterType)) {
+          const age = getAgeInYears(person.birthDate);
+          if (filterType === 'Balita') return age <= 5;
+          if (filterType === 'Anak') return age >= 6 && age <= 12;
+          if (filterType === 'Remaja') return age >= 13 && age <= 17;
+          if (filterType === 'Dewasa') return age >= 18 && age <= 59;
+          if (filterType === 'Lansia') return age >= 60;
+        }
+        if (['Laki-laki', 'Perempuan'].includes(filterType)) return person.gender === filterType;
+        if (['Warga Tetap', 'Warga Kontrak'].includes(filterType)) return person.status === filterType;
+        if (['Islam', 'Kristen', 'Katolik', 'Hindu', 'Budha', 'Konghucu'].includes(filterType)) return person.religion === filterType;
+        if (filterType === 'Kepala Keluarga') return person.role === 'Kepala Keluarga';
+        return true;
+      });
+    }
+
+    if (exportData.length === 0) return showModal("Peringatan", `Tidak ada data warga dengan kategori "${filterType}".`, "warning");
+
+    const headers = ['Nama Lengkap', 'NIK', 'Alamat', 'Status Keimigrasian', 'Hubungan', 'Jenis Kelamin', 'Agama', 'Tanggal Lahir', 'Usia Real (Tahun)'];
+    
+    const csvRows = exportData.map(p => {
+      return [
+        `"${p.name}"`, 
+        p.nik,
+        `"${p.address}"`, 
+        `"${p.status}"`, 
+        `"${p.role}"`, 
+        `"${p.gender}"`, 
+        `"${p.religion}"`, 
+        `"${p.birthDate}"`, 
+        `"${getAgeInYears(p.birthDate)}"`
+      ].join(',');
+    });
+    
+    const csvString = [headers.join(','), ...csvRows].join('\n');
+    
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Data_Warga_${filterType.replace(' ', '_')}.csv`);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleExportDemografiCSV = (selectedCategory = 'Semua') => {
+    let exportData = [];
+    const allIndividuals = [];
+    daftarWarga.forEach(w => {
+      allIndividuals.push({ ...w, role: "Kepala Keluarga" });
+      if (w.anggotaKeluarga) {
+        w.anggotaKeluarga.forEach(m => {
+          allIndividuals.push({ ...m, role: m.hubungan, address: w.address, status: w.status });
+        });
+      }
+    });
+
+    const totalJiwa = allIndividuals.length;
+    exportData.push(['Kategori', 'Sub-Kategori', 'Jumlah Jiwa', 'Persentase (%)']);
+    
+    if (selectedCategory === 'Semua') {
+      exportData.push(['Total Keseluruhan', 'Semua Warga', totalJiwa, '100%']);
+    }
+
+    const segments = {
+      Usia: [{ key: 'balita', label: 'Balita (0-5 Th)' }, { key: 'anak', label: 'Anak (6-12 Th)' }, { key: 'remaja', label: 'Remaja (13-17 Th)' }, { key: 'dewasa', label: 'Dewasa (18-59 Th)' }, { key: 'lansia', label: 'Lansia (60+ Th)' }],
+      Gender: [{ key: 'Laki-laki', label: 'Laki-Laki' }, { key: 'Perempuan', label: 'Perempuan' }],
+      Status: [{ key: 'Warga Tetap', label: 'Warga Tetap' }, { key: 'Warga Kontrak', label: 'Warga Kontrak' }],
+      Agama: [{ key: 'Islam', label: 'Islam' }, { key: 'Kristen', label: 'Kristen' }, { key: 'Katolik', label: 'Katolik' }, { key: 'Hindu', label: 'Hindu' }, { key: 'Budha', label: 'Budha' }, { key: 'Konghucu', label: 'Konghucu' }]
+    };
+
+    const categoriesToExport = selectedCategory === 'Semua' ? Object.keys(segments) : [selectedCategory];
+
+    categoriesToExport.forEach(category => {
+      segments[category].forEach(seg => {
+        const count = allIndividuals.filter(person => {
+          if (category === 'Usia') {
+            const age = getAgeInYears(person.birthDate);
+            if (seg.key === 'balita') return age <= 5;
+            if (seg.key === 'anak') return age >= 6 && age <= 12;
+            if (seg.key === 'remaja') return age >= 13 && age <= 17;
+            if (seg.key === 'dewasa') return age >= 18 && age <= 59;
+            if (seg.key === 'lansia') return age >= 60;
+          }
+          if (category === 'Gender') return (person.gender || 'Laki-laki') === seg.key;
+          if (category === 'Status') return (person.status || 'Warga Tetap') === seg.key;
+          if (category === 'Agama') return (person.religion || 'Islam') === seg.key;
+          return false;
+        }).length;
+        const pct = totalJiwa > 0 ? ((count / totalJiwa) * 100).toFixed(1) : 0;
+        exportData.push([category, seg.label, count, `${pct}%`]);
+      });
+    });
+
+    exportData.push([]); 
+    exportData.push(['=== RINCIAN DATA LENGKAP ===']);
+    exportData.push(['Nama Lengkap', 'NIK', 'Alamat', 'Status Keimigrasian', 'Hubungan', 'Jenis Kelamin', 'Agama', 'Tanggal Lahir', 'Usia Real (Tahun)']);
+
+    const formatNikUntukExcel = (nik) => (nik && nik !== '-') ? `"'${nik}"` : '-';
+
+    allIndividuals.forEach(person => {
+      exportData.push([
+        `"${person.name}"`,
+        formatNikUntukExcel(person.nik), 
+        `"${person.address || '-'}"`,
+        `"${person.status || 'Warga Tetap'}"`,
+        `"${person.role || '-'}"`,
+        `"${person.gender || 'Laki-laki'}"`,
+        `"${person.religion || 'Islam'}"`,
+        `"${person.birthDate || '-'}"`,
+        `"${getAgeInYears(person.birthDate)}"`
+      ]);
+    });
+
+    const csvString = exportData.map(row => {
+      if (row.length === 9) {
+        return row.join(',');
+      }
+      return row.map(val => `"${val}"`).join(',');
+    }).join('\n');
+    
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    
+    const filenameSuffix = selectedCategory === 'Semua' ? 'Lengkap' : selectedCategory;
+    a.setAttribute('hidden', '');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Statistik_Demografi_${filenameSuffix}_RT03.csv`);
+    
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleAddAnnouncement = (e) => {
+    e.preventDefault();
+    if (!newAnnouncement.title) return showModal("Error", "Judul wajib diisi.", "danger");
+    showConfirm("Publikasi", "Pengumuman akan dilihat seluruh warga.", async () => {
+      try {
+        const newId = Date.now();
+        await setDoc(getDocPath('pengumuman', newId.toString()), { id: newId, title: newAnnouncement.title, type: newAnnouncement.type, date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) });
+        setIsAddingAnnouncement(false);
+        setNewAnnouncement({ title: '', type: 'info' });
+        showModal("Sukses", "Diumumkan!", "success");
+      } catch (err) { 
+        console.error(err); 
+        showModal("Gagal", "Koneksi terputus: " + err.message, "danger");
+      }
+    }, "Publikasi");
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (pwdForm.old !== adminPassword) {
+      return showModal("Error", "Kata sandi lama salah.", "danger");
+    }
+    if (pwdForm.new !== pwdForm.confirm) {
+      return showModal("Error", "Konfirmasi kata sandi baru tidak cocok.", "danger");
+    }
+    if (pwdForm.new.length < 6) {
+      return showModal("Error", "Kata sandi baru minimal 6 karakter.", "danger");
+    }
+
+    showConfirm("Ubah Kata Sandi?", "Anda akan menggunakan kata sandi baru ini untuk login selanjutnya.", async () => {
+      try {
+        await setDoc(getDocPath('settings', 'admin_config'), { password: pwdForm.new }, { merge: true });
+        setIsChangingPassword(false);
+        setPwdForm({ old: '', new: '', confirm: '' });
+        showModal("Sukses", "Kata Sandi Admin berhasil diubah!", "success");
+      } catch (err) {
+        console.error(err);
+        showModal("Gagal", "Terjadi kesalahan saat mengubah sandi: " + err.message, "danger");
+      }
+    });
+  };
+
+  return (
+    <div className="p-4 pb-24 bg-gray-100 min-h-full border-t border-gray-200">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold text-gray-800">Panel Admin</h2>
+        <button onClick={() => { setIsAdmin(false); setActiveTab('home'); }} className="text-xs bg-red-100 text-red-600 px-3 py-2 rounded-xl font-bold">Keluar</button>
+      </div>
+
+      {/* Antrean Surat */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5 mb-3"><FileText size={18} className="text-orange-500"/> Antrean Surat ({suratRequests.filter(s => s.status === 'pending').length})</h3>
+        <div className="space-y-3">
+          {suratRequests.filter(s => s.status === 'pending').map(surat => (
+            <div key={surat.id} className="bg-orange-50/50 p-4 rounded-xl border border-l-4 border-orange-400">
+              <p className="font-bold text-xs text-gray-800">{surat.type}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">Pemohon: {surat.nama} | Ket: "{surat.keterangan || '-'}"</p>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => setSelectedPrintSurat(surat)} className="flex-1 bg-white border hover:bg-gray-50 text-gray-700 py-1.5 rounded-lg text-[10px] font-bold shadow-sm">Cek</button>
+                <button onClick={() => handleApprove(surat.id, 'selesai')} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-1.5 rounded-lg text-[10px] font-bold">Setujui</button>
+                <button onClick={() => handleApprove(surat.id, 'ditolak')} className="flex-1 bg-red-600 hover:bg-red-700 text-white py-1.5 rounded-lg text-[10px] font-bold">Tolak</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Arsip Surat */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5"><FileText size={18} className="text-gray-500"/> Arsip Surat</h3>
+        </div>
+        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 hide-scrollbar">
+          {suratRequests.filter(s => s.status !== 'pending').map(surat => (
+            <div key={surat.id} className="bg-gray-50 p-3 rounded-xl border flex justify-between items-center gap-3">
+              <div className="min-w-0"><p className="font-bold text-xs text-gray-800 truncate">{surat.type}</p><p className="text-[10px] text-gray-500 mt-0.5">Oleh: {surat.nama}</p></div>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${surat.status === 'selesai' ? 'text-blue-700 bg-blue-100' : 'text-red-700 bg-red-100'}`}>{surat.status}</span>
+                <div className="flex gap-2">
+                  {surat.status === 'selesai' && <button onClick={() => setSelectedPrintSurat(surat)} className="bg-white border shadow-sm px-2 py-1 rounded text-[9px] font-bold">Cetak</button>}
+                  <button onClick={() => handleDeleteSurat(surat.id)} className="bg-red-50 border border-red-200 text-red-600 px-2 py-1 rounded text-[9px] font-bold">Hapus</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Admin Kelola Pengumuman */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5"><Bell size={18} className="text-blue-500"/> Pengumuman RT</h3>
+          <button onClick={() => setIsAddingAnnouncement(!isAddingAnnouncement)} className="bg-blue-50 text-blue-600 p-1.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1"><PlusCircle size={12} /> Tambah</button>
+        </div>
+        {isAddingAnnouncement && (
+          <form onSubmit={handleAddAnnouncement} className="bg-gray-50 p-3 rounded-xl border mb-4 space-y-3 text-xs">
+            <p className="font-bold text-[10px] text-gray-500 uppercase">Buat Pengumuman Baru</p>
+            <textarea placeholder="Isi pengumuman..." value={newAnnouncement.title} onChange={e => setNewAnnouncement({...newAnnouncement, title: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white h-20 outline-none" required></textarea>
+            <select value={newAnnouncement.type} onChange={e => setNewAnnouncement({...newAnnouncement, type: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white outline-none">
+              <option value="info">Info Biasa (Biru)</option><option value="warning">Penting (Oranye)</option>
+            </select>
+            <div className="flex gap-2"><button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-bold shadow-sm">Publikasikan</button></div>
+          </form>
+        )}
+        <div className="space-y-2 max-h-[250px] overflow-y-auto">
+          {announcements.map(ann => (
+            <div key={ann.id} className="flex justify-between items-start p-3 bg-white rounded-xl border border-gray-100 text-xs gap-3">
+              <div className="min-w-0 flex-1"><p className="font-bold text-gray-800 text-xs leading-snug">{ann.title}</p><p className="text-[9px] text-gray-400 mt-1">{ann.date}</p></div>
+              <button onClick={() => deleteDoc(getDocPath('pengumuman', ann.id.toString()))} className="p-1.5 bg-red-50 text-red-600 rounded-lg"><Trash2 size={12} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Admin Kelola Kop & TTD */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5 mb-2"><Camera size={16} className="text-blue-600" /> Kop Surat Digital</h3>
+        <p className="text-[10px] text-gray-400 mb-4">Pengaturan Kop Header Surat</p>
+        <div className="flex gap-4 mb-4">
+          <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer"><input type="radio" name="kopType" value="default" checked={rtKopType === 'default'} onChange={() => setRtKopType('default')} /> Logo + Teks</label>
+          <label className="flex items-center gap-2 text-xs font-bold text-gray-700 cursor-pointer"><input type="radio" name="kopType" value="banner" checked={rtKopType === 'banner'} onChange={() => setRtKopType('banner')} /> Banner Penuh</label>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="border border-dashed rounded-xl p-3 flex flex-col items-center justify-center bg-gray-50 relative group">
+            <span className="text-[9px] font-bold text-gray-500 uppercase mb-2">Logo Kop Surat</span>
+            <div className="w-20 h-20 rounded-full bg-white border border-gray-200 overflow-hidden flex items-center justify-center">
+              {rtKopLogo ? <img src={rtKopLogo} alt="Logo Kop Surat" className="w-full h-full object-cover" /> : <span className="text-[8px] text-center px-1">Upload Logo</span>}
+            </div>
+            <input type="file" accept="image/*" className="absolute inset-x-0 top-14 h-20 opacity-0 cursor-pointer z-0" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setRtKopLogo(ev.target.result); r.readAsDataURL(f); } }} />
+            {rtKopLogo && <button type="button" onClick={() => setRtKopLogo('')} className="relative z-10 mt-2 text-[10px] text-red-600 font-bold uppercase">Hapus Logo</button>}
+          </div>
+          <div className="border border-dashed rounded-xl p-3 flex flex-col items-center justify-center bg-gray-50 relative group">
+            <span className="text-[9px] font-bold text-gray-500 uppercase mb-2">Banner Kop Surat</span>
+            <div className="w-full h-20 rounded-xl bg-white border border-gray-200 overflow-hidden flex items-center justify-center">
+              {rtKopBanner ? <img src={rtKopBanner} alt="Banner Kop Surat" className="w-full h-full object-cover" /> : <span className="text-[8px] text-center px-1">Upload Banner</span>}
+            </div>
+            <input type="file" accept="image/*" className="absolute inset-x-0 top-14 h-20 opacity-0 cursor-pointer z-0" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setRtKopBanner(ev.target.result); r.readAsDataURL(f); } }} />
+            {rtKopBanner && <button type="button" onClick={() => setRtKopBanner('')} className="relative z-10 mt-2 text-[10px] text-red-600 font-bold uppercase">Hapus Banner</button>}
+          </div>
+        </div>
+        <form onSubmit={handleSaveRwLeader} className="bg-gray-50 p-4 rounded-xl border border-dashed border-gray-200 space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Nama Ketua RW (untuk surat cetak)</p>
+          <input type="text" value={rwEditName} onChange={(e) => setRwEditName(e.target.value)} className="w-full border border-gray-200 rounded-lg p-2.5 text-sm bg-white" placeholder="Contoh: BAMBANG P." />
+          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-bold">Simpan Ketua RW</button>
+        </form>
+      </div>
+
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5 mb-2"><Edit2 size={16} className="text-indigo-600" /> TTD & Stempel Digital</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="border border-dashed rounded-xl p-3 flex flex-col items-center justify-center bg-gray-50 relative group">
+            <span className="text-[9px] font-bold text-gray-500 uppercase mb-2">TTD RT</span>
+            <div className="w-32 h-20 border rounded bg-white flex items-center justify-center overflow-hidden">{rtSignature ? <img src={rtSignature} alt="TTD" className="w-full h-full object-contain" /> : <span className="text-[8px]">Upload PNG</span>}</div>
+            <input type="file" accept="image/*" className="absolute inset-x-0 top-12 h-20 opacity-0 cursor-pointer z-0" onChange={(e) => { const f = e.target.files[0]; if(f){ const r = new FileReader(); r.onload=(ev)=>setRtSignature(ev.target.result); r.readAsDataURL(f);} }} />
+            {rtSignature && <button type="button" onClick={() => setRtSignature('')} className="relative z-10 mt-2 text-[10px] text-red-600 font-bold uppercase">Hapus TTD</button>}
+          </div>
+          <div className="border border-dashed rounded-xl p-3 flex flex-col items-center justify-center bg-gray-50 relative group">
+            <span className="text-[9px] font-bold text-gray-500 uppercase mb-2">Stempel</span>
+            <div className="w-20 h-16 border rounded bg-white flex items-center justify-center overflow-hidden">{rtStamp ? <img src={rtStamp} alt="Stamp" className="w-full h-full object-contain" /> : <span className="text-[8px]">Upload PNG</span>}</div>
+            <input type="file" accept="image/*" className="absolute inset-x-0 top-12 h-16 opacity-0 cursor-pointer z-0" onChange={(e) => { const f = e.target.files[0]; if(f){ const r = new FileReader(); r.onload=(ev)=>setRtStamp(ev.target.result); r.readAsDataURL(f);} }} />
+            {rtStamp && <button type="button" onClick={() => setRtStamp('')} className="relative z-10 mt-2 text-[10px] text-red-600 font-bold uppercase">Hapus Stempel</button>}
+          </div>
+        </div>
+      </div>
+
+      {/* Admin Kelola Keamanan */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5"><ShieldAlert size={18} className="text-red-600"/> Keamanan Akun</h3>
+        </div>
+        {!isChangingPassword ? (
+          <button onClick={() => setIsChangingPassword(true)} className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 transition-colors shadow-sm"><Edit2 size={14}/> Ubah Kata Sandi Admin</button>
+        ) : (
+          <form onSubmit={handleChangePassword} className="bg-red-50/50 p-4 rounded-xl border border-red-100 space-y-3">
+            <p className="font-bold text-[10px] text-red-800 uppercase tracking-wider mb-2">Formulir Ubah Sandi</p>
+            <input type="password" placeholder="Sandi Lama" value={pwdForm.old} onChange={e => setPwdForm({...pwdForm, old: e.target.value})} className="w-full border border-red-200 p-2.5 rounded-lg text-xs outline-none focus:border-red-400 bg-white" required />
+            <input type="password" placeholder="Sandi Baru (Min. 6 Karakter)" value={pwdForm.new} onChange={e => setPwdForm({...pwdForm, new: e.target.value})} className="w-full border border-red-200 p-2.5 rounded-lg text-xs outline-none focus:border-red-400 bg-white" required />
+            <input type="password" placeholder="Konfirmasi Sandi Baru" value={pwdForm.confirm} onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})} className="w-full border border-red-200 p-2.5 rounded-lg text-xs outline-none focus:border-red-400 bg-white" required />
+            <div className="flex gap-2 pt-2">
+              <button type="submit" className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg font-bold text-xs shadow-md shadow-red-600/20 transition-colors">Simpan Sandi</button>
+              <button type="button" onClick={() => {setIsChangingPassword(false); setPwdForm({old:'', new:'', confirm:''});}} className="flex-1 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-lg font-bold text-xs transition-colors">Batal</button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Admin Kelola Data Warga */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5"><Users size={18} className="text-emerald-600"/> Data Warga</h3>
+          <div className="flex gap-2 relative">
+            <button onClick={() => setIsExportModalOpen(true)} className="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1.5"><Download size={12} /> Unduh CSV</button>
+            <button onClick={() => {
+                setIsAddingWarga(!isAddingWarga);
+                if (isAddingWarga) {
+                  setEditingWargaId(null);
+                  setNewWarga({ name: '', nik: '', address: '', status: 'Warga Tetap', isKK: true, birthDate: '', gender: 'Laki-laki', religion: 'Islam' });
+                  setFamilyMembersInput([{ name: '', nik: '', hubungan: 'Istri', birthDate: '', gender: 'Perempuan', religion: 'Islam' }]);
+                }
+              }} className="bg-emerald-50 text-emerald-600 p-1.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1"><PlusCircle size={12} /> {isAddingWarga && !editingWargaId ? 'Batal' : 'Tambah'}</button>
+          </div>
+        </div>
+        {isAddingWarga && (
+          <form onSubmit={confirmAddWarga} className="bg-gray-50 p-3 rounded-xl border mb-4 space-y-3 text-xs max-h-[450px] overflow-y-auto">
+            <p className="font-bold text-[10px] text-gray-500 uppercase">{editingWargaId ? "Edit Kepala Keluarga" : "Tambah Kepala Keluarga"}</p>
+            <input type="text" placeholder="Nama Kepala Keluarga" value={newWarga.name} onChange={e => setNewWarga({...newWarga, name: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white" required />
+            <input type="text" placeholder="NIK" value={newWarga.nik} onChange={e => setNewWarga({...newWarga, nik: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white" required />
+            <input type="text" placeholder="Alamat" value={newWarga.address} onChange={e => setNewWarga({...newWarga, address: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white" required />
+            <div className="grid grid-cols-2 gap-2">
+              <select value={newWarga.gender} onChange={e => setNewWarga({...newWarga, gender: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white"><option value="Laki-laki">Laki-laki</option><option value="Perempuan">Perempuan</option></select>
+              <input type="date" value={newWarga.birthDate} onChange={e => setNewWarga({...newWarga, birthDate: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white" required />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select value={newWarga.status} onChange={e => setNewWarga({...newWarga, status: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white text-xs">
+                <option value="Warga Tetap">Warga Tetap</option>
+                <option value="Warga Kontrak">Warga Kontrak</option>
+              </select>
+              <select value={newWarga.religion} onChange={e => setNewWarga({...newWarga, religion: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white text-xs">
+                <option value="Islam">Islam</option>
+                <option value="Kristen">Kristen</option>
+                <option value="Katolik">Katolik</option>
+                <option value="Hindu">Hindu</option>
+                <option value="Budha">Budha</option>
+                <option value="Konghucu">Konghucu</option>
+              </select>
+            </div>
+            <div className="border-t border-gray-200 pt-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-bold text-[10px] text-gray-500 uppercase">Anggota Keluarga</p>
+                <button type="button" onClick={() => setFamilyMembersInput([...familyMembersInput, { name: '', nik: '', hubungan: 'Istri', birthDate: '', gender: 'Perempuan', religion: 'Islam' }])} className="text-blue-600 text-[10px] font-bold">+ Tambah Anggota</button>
+              </div>
+              {familyMembersInput.map((member, idx) => (
+                <div key={idx} className="bg-white border border-gray-200 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[9px] font-bold text-gray-600">Anggota {idx + 1}</span>
+                    {familyMembersInput.length > 1 && (
+                      <button type="button" onClick={() => setFamilyMembersInput(familyMembersInput.filter((_, fidx) => fidx !== idx))} className="text-red-600 text-[9px] font-bold">Hapus</button>
+                    )}
+                  </div>
+                  <input type="text" placeholder="Nama Anggota" value={member.name} onChange={e => setFamilyMembersInput(familyMembersInput.map((m, fidx) => fidx === idx ? { ...m, name: e.target.value } : m))} className="w-full border p-2.5 rounded-lg bg-white" />
+                  <input type="text" placeholder="NIK Anggota" value={member.nik} onChange={e => setFamilyMembersInput(familyMembersInput.map((m, fidx) => fidx === idx ? { ...m, nik: e.target.value } : m))} className="w-full border p-2.5 rounded-lg bg-white" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={member.hubungan} onChange={e => setFamilyMembersInput(familyMembersInput.map((m, fidx) => fidx === idx ? { ...m, hubungan: e.target.value } : m))} className="w-full border p-2.5 rounded-lg bg-white text-xs">
+                      <option value="Istri">Istri</option>
+                      <option value="Suami">Suami</option>
+                      <option value="Anak">Anak</option>
+                      <option value="Ayah">Ayah</option>
+                      <option value="Ibu">Ibu</option>
+                      <option value="Saudara">Saudara</option>
+                    </select>
+                    <select value={member.gender} onChange={e => setFamilyMembersInput(familyMembersInput.map((m, fidx) => fidx === idx ? { ...m, gender: e.target.value } : m))} className="w-full border p-2.5 rounded-lg bg-white text-xs">
+                      <option value="Laki-laki">Laki-laki</option>
+                      <option value="Perempuan">Perempuan</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="date" value={member.birthDate} onChange={e => setFamilyMembersInput(familyMembersInput.map((m, fidx) => fidx === idx ? { ...m, birthDate: e.target.value } : m))} className="w-full border p-2.5 rounded-lg bg-white" />
+                    <select value={member.religion} onChange={e => setFamilyMembersInput(familyMembersInput.map((m, fidx) => fidx === idx ? { ...m, religion: e.target.value } : m))} className="w-full border p-2.5 rounded-lg bg-white text-xs">
+                      <option value="Islam">Islam</option>
+                      <option value="Kristen">Kristen</option>
+                      <option value="Katolik">Katolik</option>
+                      <option value="Hindu">Hindu</option>
+                      <option value="Budha">Budha</option>
+                      <option value="Konghucu">Konghucu</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => {
+                setIsAddingWarga(false);
+                setEditingWargaId(null);
+                setNewWarga({ name: '', nik: '', address: '', status: 'Warga Tetap', isKK: true, birthDate: '', gender: 'Laki-laki', religion: 'Islam' });
+                setFamilyMembersInput([{ name: '', nik: '', hubungan: 'Istri', birthDate: '', gender: 'Perempuan', religion: 'Islam' }]);
+              }} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2.5 rounded-lg font-bold">Batal</button>
+              <button type="submit" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg font-bold">Simpan Warga</button>
+            </div>
+          </form>
+        )}
+        <div className="space-y-2 max-h-[250px] overflow-y-auto">
+          {daftarWarga.map(w => (
+            <div key={w.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs">
+              <div className="min-w-0 flex-1"><p className="font-bold text-gray-800">{w.name}</p><p className="text-[9px] text-gray-400">{w.address}</p></div>
+              <div className="flex gap-1.5 shrink-0">
+                <button onClick={() => handleEditWargaClick(w)} className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="Edit Data"><Edit2 size={12} /></button>
+                <button onClick={() => deleteDoc(getDocPath('warga', w.id.toString()))} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100" title="Hapus Data"><Trash2 size={12} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <ExportDataModal 
+        isOpen={isExportModalOpen} 
+        onClose={() => setIsExportModalOpen(false)} 
+        onConfirmExportRaw={confirmExportCSV} 
+        onConfirmExportStats={confirmExportDemografiCSV} 
+      />
+
+      {/* Admin Kelola Struktur Pengurus */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 mb-6 shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-bold text-sm text-gray-800 flex items-center gap-1.5"><Users size={18} className="text-indigo-600"/> Struktur Pengurus</h3>
+          <button onClick={() => setIsAdding(!isAdding)} className="bg-indigo-50 text-indigo-600 p-1.5 rounded-lg text-[10px] font-extrabold flex items-center gap-1"><PlusCircle size={12} /> Tambah</button>
+        </div>
+
+        {isAdding && (
+          <form onSubmit={handleAddOfficer} className="bg-gray-50 p-3 rounded-xl border mb-4 space-y-2 text-xs">
+            <p className="font-bold text-[10px] text-gray-500 uppercase">Tambah Pengurus Baru</p>
+            
+            <select value={newOfficer.wargaId} onChange={e => {
+                const selectedId = e.target.value;
+                const w = allCitizens.find(c => c.refId === selectedId);
+                setNewOfficer({...newOfficer, wargaId: selectedId, name: w ? w.name : ''});
+              }} className="w-full border p-2 rounded-lg bg-white" required>
+              <option value="">-- Pilih Warga (Sinkronisasi Otomatis) --</option>
+              {allCitizens.map(c => <option key={c.refId} value={c.refId}>{c.name} ({c.address})</option>)}
+            </select>
+            
+            <input type="text" placeholder="Jabatan (Contoh: Ketua RT)" value={newOfficer.role} onChange={e => setNewOfficer({...newOfficer, role: e.target.value})} className="w-full border p-2 rounded-lg bg-white" required />
+            <input type="text" placeholder="Nomor Telepon/WA" value={newOfficer.phone} onChange={e => setNewOfficer({...newOfficer, phone: e.target.value})} className="w-full border p-2 rounded-lg bg-white" />
+            <select value={newOfficer.level} onChange={e => setNewOfficer({...newOfficer, level: Number(e.target.value)})} className="w-full border p-2 rounded-lg bg-white">
+              <option value={1}>Tingkat 1 (Ketua/Penasehat)</option><option value={2}>Tingkat 2 (Sekretaris/Bendahara)</option><option value={3}>Tingkat 3 (Seksi-seksi)</option>
+            </select>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-bold text-[10px]">Simpan Pengurus</button>
+              <button type="button" onClick={() => setIsAdding(false)} className="bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-[10px]">Batal</button>
+            </div>
+          </form>
+        )}
+
+        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 hide-scrollbar">
+          {pengurusRT.map(p => (
+            <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs">
+              <div className="min-w-0 flex-1 pr-2 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-gray-200 border border-gray-100 overflow-hidden flex items-center justify-center shrink-0 text-gray-500 font-bold">{p.name.charAt(0)}</div>
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-800 truncate">{p.name}</p>
+                  <p className="text-[9px] text-gray-500 truncate">{p.role} (Level {p.level})</p>
+                </div>
+              </div>
+              <button onClick={async () => {
+                try {
+                  await deleteDoc(getDocPath('pengurus', p.id.toString()));
+                  showModal("Sukses", "Pengurus dihapus.", "success");
+                } catch(e) { console.error(e); }
+              }} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"><Trash2 size={12} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [serverError, setServerError] = useState(null); 
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem('isLoggedIn') === 'true');
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('userRole') || 'warga');
+
+  const [activeTab, setActiveTab] = useState('home');
+  const [modalConfig, setModalConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', action: null, confirmText: 'Ya' });
+  
+  const isAdmin = userRole === 'admin';
+
+  const [previewImage, setPreviewImage] = useState(null);
+  const [selectedOfficer, setSelectedOfficer] = useState(null);
+  const [selectedPrintSurat, setSelectedPrintSurat] = useState(null);
+  const [selectedWargaDetail, setSelectedWargaDetail] = useState(null);
+  const [selectedBirthdayWarga, setSelectedBirthdayWarga] = useState(null);
+
+  const [rtSignature, setRtSignature] = useState(() => localStorage.getItem('rtSignature') || '');
+  const [rtStamp, setRtStamp] = useState(() => localStorage.getItem('rtStamp') || '');
+  const [rtKopType, setRtKopType] = useState(() => localStorage.getItem('rtKopType') || 'default');
+  const [rtKopLogo, setRtKopLogo] = useState(() => localStorage.getItem('rtKopLogo') || '');
+  const [rtKopBanner, setRtKopBanner] = useState(() => localStorage.getItem('rtKopBanner') || '');
+  const [rwLeaderName, setRwLeaderName] = useState(() => localStorage.getItem('rwLeaderName') || 'BAMBANG P.');
+
+  const [isComplaintModalOpen, setIsComplaintModalOpen] = useState(false);
+  const [currentUserProfile, setCurrentUserProfile] = useState(() => {
+    const saved = localStorage.getItem('currentUserProfile');
+    if (saved) return JSON.parse(saved);
+    return {
+      name: "Budi Santoso", address: "Blok A2 No. 15", rt: "03", rw: "011", komplek: "Gardenia Sepatan", status: "Warga Tetap", isKK: true, photo: "", gender: "Laki-laki", birthInfo: "Tangerang, 12 Agustus 1990", nationalityAndReligion: "Indonesia / Islam", job: "Wiraswasta", nik: "3603181208900004"
+    };
+  });
+
+  const [daftarWarga, setDaftarWarga] = useState([]);
+  const [pengurusRT, setPengurusRT] = useState([]);
+  const [suratRequests, setSuratRequests] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [adminPassword, setAdminPassword] = useState('admin123');
+
+  const showModal = (title, message, type = 'info') => setModalConfig({ isOpen: true, title, message, type });
+  const closeModal = () => setModalConfig({ ...modalConfig, isOpen: false });
+
+  const showConfirm = (title, message, action, confirmText = 'Ya') => {
+    setConfirmConfig({ isOpen: true, title, message, action, confirmText });
+  };
+  const closeConfirm = () => setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try { 
+        await signInAnonymously(auth);
+      } catch (err) { 
+        console.error("Gagal inisialisasi Firebase Auth:", err);
+        setServerError("Gagal melakukan otentikasi ke Firebase. Pastikan mode Anonim (Anonymous) aktif di Console.");
+      }
+    };
+    initAuth();
+    
+    const unsubscribe = onAuthStateChanged(auth, setFirebaseUser);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const handleSnapshotError = (err) => {
+       console.error("Firebase Error:", err);
+       if (err.message.includes("not found")) {
+           setServerError("Server database sedang menyiapkan diri (butuh waktu 5-15 menit). Mohon tunggu lalu refresh halaman ini.");
+       } else if (err.message.includes("permission")) {
+           setServerError("Akses ke database dikunci. Pastikan aturan (Rules) Firestore Anda diatur ke 'allow read, write: if true;'.");
+       } else {
+           setServerError("Gagal mengambil data: " + err.message);
+       }
+    };
+
+    const unsubWarga = onSnapshot(getCollectionPath('warga'), (snapshot) => {
+      setServerError(null); 
+      if (snapshot.empty) {
+        setDaftarWarga([]);
+      } else {
+        setDaftarWarga(snapshot.docs.map(doc => doc.data()));
+      }
+    }, handleSnapshotError);
+    
+    const unsubPengurus = onSnapshot(getCollectionPath('pengurus'), (snapshot) => {
+      if (snapshot.empty) {
+        setPengurusRT([]);
+      } else {
+        setPengurusRT(snapshot.docs.map(doc => doc.data()));
+      }
+    }, handleSnapshotError);
+    
+    const unsubSurat = onSnapshot(getCollectionPath('surat'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data());
+      data.sort((a,b) => b.id - a.id);
+      setSuratRequests(data);
+    }, handleSnapshotError);
+    
+    const unsubPengaduan = onSnapshot(getCollectionPath('pengaduan'), (snapshot) => {
+      if (snapshot.empty) {
+        setComplaints([]);
+      } else {
+        const data = snapshot.docs.map(doc => doc.data());
+        data.sort((a,b) => b.id - a.id);
+        setComplaints(data);
+      }
+    }, handleSnapshotError);
+    
+    const unsubPengumuman = onSnapshot(getCollectionPath('pengumuman'), (snapshot) => {
+      if (snapshot.empty) {
+        const defaultAnn = { id: Date.now(), title: "Kerja Bakti Minggu Ini", date: "12 Jun 2026", type: "info" };
+        try {
+          setDoc(getDocPath('pengumuman', defaultAnn.id.toString()), defaultAnn);
+          setAnnouncements([defaultAnn]);
+        } catch(e){}
+      } else {
+        const data = snapshot.docs.map(doc => doc.data());
+        data.sort((a,b) => b.id - a.id);
+        setAnnouncements(data);
+      }
+    }, handleSnapshotError);
+    
+    const unsubSettings = onSnapshot(getDocPath('settings', 'admin_config'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setAdminPassword(data.password || 'admin123');
+        setRwLeaderName(data.rwLeaderName || localStorage.getItem('rwLeaderName') || 'BAMBANG P.');
+      } else {
+        try {
+          setDoc(getDocPath('settings', 'admin_config'), { password: 'admin123', rwLeaderName: 'BAMBANG P.' });
+        } catch(e){}
+      }
+    }, handleSnapshotError);
+
+    return () => { unsubWarga(); unsubPengurus(); unsubSurat(); unsubPengaduan(); unsubPengumuman(); unsubSettings(); };
+  }, [firebaseUser]);
+
+  const handleReplyComplaint = async (complaintId, replyText) => {
+    const complaint = complaints.find(c => c.id === complaintId);
+    if (!complaint) return;
+    const sender = isAdmin ? "Pengurus RT" : currentUserProfile.name;
+    const newResponse = { admin: isAdmin ? sender : '', warga: !isAdmin ? sender : '', text: replyText };
+    try {
+      await setDoc(getDocPath('pengaduan', complaintId.toString()), {
+        ...complaint,
+        responses: [...(complaint.responses || []), newResponse]
+      }, { merge: true });
+      showModal("Berhasil!", "Komentar / Balasan Anda telah dipublikasikan.", "success");
+    } catch (error) {
+      console.error(error);
+      showModal("Gagal", "Komentar tidak terkirim: " + error.message, "danger");
+    }
+  };
+
+  const handleDeleteComplaint = async (complaintId) => {
+    const complaint = complaints.find(c => c.id === complaintId);
+    if (!complaint) return;
+    showConfirm("Hapus Aduan", "Apakah Anda yakin ingin menghapus aduan ini? Tindakan ini tidak dapat dibatalkan.", async () => {
+      try {
+        await deleteDoc(getDocPath('pengaduan', complaintId.toString()));
+        showModal("Berhasil", "Aduan telah dihapus dari sistem.", "success");
+      } catch (error) {
+        console.error(error);
+        showModal("Gagal", "Aduan tidak dapat dihapus: " + error.message, "danger");
+      }
+    }, "Hapus");
+  };
+
+  const handleDeleteSurat = async (id) => {
+    const targetSurat = suratRequests.find(s => s.id === id);
+    if (!targetSurat) return;
+    showConfirm("Hapus Arsip Surat", "Apakah Anda yakin ingin menghapus arsip surat ini? Tindakan ini tidak dapat dikembalikan.", async () => {
+      try {
+        await deleteDoc(getDocPath('surat', id.toString()));
+        showModal("Berhasil", "Arsip surat telah dihapus.", "success");
+      } catch (err) {
+        console.error(err);
+        showModal("Gagal", "Tidak dapat menghapus arsip surat: " + err.message, "danger");
+      }
+    }, "Hapus");
+  };
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      localStorage.setItem('currentUserProfile', JSON.stringify(currentUserProfile));
+    }
+  }, [currentUserProfile, isLoggedIn]);
+
+  useEffect(() => {
+    if (!currentUserProfile?.refId || daftarWarga.length === 0) return;
+    const parent = daftarWarga.find(w => w.id === currentUserProfile.refId);
+    if (!parent) return;
+
+    let resolvedPhoto = '';
+    if (currentUserProfile.isKK) {
+      resolvedPhoto = parent.photo || '';
+    } else {
+      const member = parent.anggotaKeluarga?.find(m => m.nik === currentUserProfile.nik);
+      resolvedPhoto = member?.photo || '';
+    }
+
+    if (resolvedPhoto && resolvedPhoto !== currentUserProfile.photo) {
+      setCurrentUserProfile(prev => ({ ...prev, photo: resolvedPhoto }));
+    }
+  }, [daftarWarga, currentUserProfile]);
+
+  const handleLogin = (role, profile) => {
+    setUserRole(role);
+    setIsLoggedIn(true);
+    localStorage.setItem('isLoggedIn', 'true');
+    localStorage.setItem('userRole', role);
+    setCurrentUserProfile(profile);
+  };
+
+  const handleLogout = () => { 
+    setIsLoggedIn(false); 
+    setActiveTab('home'); 
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('currentUserProfile');
+  };
+
+  useEffect(() => {
+    localStorage.setItem('rtKopType', rtKopType);
+    localStorage.setItem('rtKopLogo', rtKopLogo);
+    localStorage.setItem('rtKopBanner', rtKopBanner);
+    localStorage.setItem('rtSignature', rtSignature);
+    localStorage.setItem('rtStamp', rtStamp);
+    localStorage.setItem('rwLeaderName', rwLeaderName);
+  }, [rtKopType, rtKopLogo, rtKopBanner, rtSignature, rtStamp, rwLeaderName]);
+
+  if (!isLoggedIn) return <LoginScreen onLogin={handleLogin} adminPassword={adminPassword} daftarWarga={daftarWarga} />;
+
+  const allCitizensForSync = [];
+  daftarWarga.forEach(w => {
+    allCitizensForSync.push({ ...w, refId: w.id.toString() });
+    if (w.anggotaKeluarga) {
+      w.anggotaKeluarga.forEach((m, idx) => {
+        allCitizensForSync.push({ ...m, refId: `${w.id}_${idx}`, address: w.address });
+      });
+    }
+  });
+
+  const enrichedPengurus = pengurusRT.map(p => {
+    const linkedWarga = allCitizensForSync.find(c => c.refId === p.wargaId || c.name === p.name);
+    return {
+      ...p,
+      name: linkedWarga ? linkedWarga.name : p.name,
+      photo: linkedWarga ? (linkedWarga.photo || p.photo) : p.photo
+    };
+  });
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-0 md:p-4 font-sans antialiased relative">
+      {/* PITA PERINGATAN SERVER */}
+      {serverError && (
+        <div className="absolute top-0 left-0 w-full bg-red-600 text-white p-3 text-center text-xs font-bold z-[9999] shadow-md flex justify-between items-center px-4 animate-in slide-in-from-top-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} /> <span>{serverError}</span>
+          </div>
+          <button onClick={() => setServerError(null)} className="p-1 hover:bg-red-700 rounded-full transition-colors"><X size={16} /></button>
+        </div>
+      )}
+
+      <div className="w-full max-w-[400px] h-[100dvh] md:h-[850px] bg-white md:rounded-[2.5rem] shadow-2xl relative overflow-hidden flex flex-col md:border-[10px] md:border-gray-950">
+        <header className="bg-white px-3 py-2 border-b flex justify-between items-center min-h-[64px] shrink-0">
+          <img src="/image_385930.png" alt="Kop" className="h-12 object-contain" onError={({ currentTarget }) => { currentTarget.style.display = 'none'; }} />
+          <button onClick={handleLogout} className="text-red-500 bg-red-50 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide">
+            <LogOut size={12} /> Keluar
+          </button>
+        </header>
+
+        <main className="flex-1 overflow-y-auto bg-gray-50/50 hide-scrollbar relative">
+          {activeTab === 'home' && <HomeTab currentUserProfile={currentUserProfile} setCurrentUserProfile={setCurrentUserProfile} pengurusRT={enrichedPengurus} announcements={announcements} daftarWarga={daftarWarga} complaints={complaints} isAdmin={isAdmin} onReplyComplaint={handleReplyComplaint} onDeleteComplaint={handleDeleteComplaint} setActiveTab={setActiveTab} showModal={showModal} setSelectedOfficer={setSelectedOfficer} setSelectedBirthdayWarga={setSelectedBirthdayWarga} setIsComplaintModalOpen={setIsComplaintModalOpen} setPreviewImage={setPreviewImage} db={db} appId={appId} />}
+          {activeTab === 'surat' && <SuratTab currentUserProfile={currentUserProfile} suratRequests={suratRequests} setSelectedPrintSurat={setSelectedPrintSurat} showModal={showModal} rtKopType={rtKopType} rtKopLogo={rtKopLogo} rtKopBanner={rtKopBanner} rwLeaderName={rwLeaderName} db={db} appId={appId} showConfirm={showConfirm} handleDeleteSurat={handleDeleteSurat} />}
+          {activeTab === 'warga' && <WargaTab daftarWarga={daftarWarga} setSelectedWargaDetail={setSelectedWargaDetail} />}
+          {activeTab === 'demografi' && <DemografiTab daftarWarga={daftarWarga} />}
+          {activeTab === 'admin' && isAdmin && <AdminTab suratRequests={suratRequests} pengurusRT={enrichedPengurus} daftarWarga={daftarWarga} complaints={complaints} announcements={announcements} setIsAdmin={() => setIsLoggedIn(false)} setActiveTab={setActiveTab} showModal={showModal} setSelectedPrintSurat={setSelectedPrintSurat} rtSignature={rtSignature} setRtSignature={setRtSignature} rtStamp={rtStamp} setRtStamp={setRtStamp} rtKopType={rtKopType} setRtKopType={setRtKopType} rtKopLogo={rtKopLogo} setRtKopLogo={setRtKopLogo} rtKopBanner={rtKopBanner} setRtKopBanner={setRtKopBanner} rwLeaderName={rwLeaderName} setRwLeaderName={setRwLeaderName} db={db} appId={appId} showConfirm={showConfirm} adminPassword={adminPassword} />}
+        </main>
+
+        <nav className="bg-white border-t border-gray-100 pb-2 md:pb-0 z-20 shrink-0 shadow-inner">
+          <div className="flex justify-around items-center h-16 px-1">
+            <button onClick={() => { setActiveTab('home'); }} className={`flex flex-col items-center justify-center w-1/5 h-full space-y-1 ${activeTab === 'home' ? 'text-blue-600' : 'text-gray-400'}`}><Home size={18} /> <span className="text-[8px] font-bold">Beranda</span></button>
+            <button onClick={() => { setActiveTab('surat'); }} className={`flex flex-col items-center justify-center w-1/5 h-full space-y-1 ${activeTab === 'surat' ? 'text-blue-600' : 'text-gray-400'}`}><FileText size={18} /> <span className="text-[8px] font-bold">Surat</span></button>
+            <button onClick={() => { setActiveTab('warga'); }} className={`flex flex-col items-center justify-center w-1/5 h-full space-y-1 ${activeTab === 'warga' ? 'text-blue-600' : 'text-gray-400'}`}><Users size={18} /> <span className="text-[8px] font-bold">Warga</span></button>
+            <button onClick={() => { setActiveTab('demografi'); }} className={`flex flex-col items-center justify-center w-1/5 h-full space-y-1 ${activeTab === 'demografi' ? 'text-blue-600' : 'text-gray-400'}`}><BarChart3 size={18} /> <span className="text-[8px] font-bold">Demografi</span></button>
+            {isAdmin && <button onClick={() => { setActiveTab('admin'); }} className={`flex flex-col items-center justify-center w-1/5 h-full space-y-1 ${activeTab === 'admin' ? 'text-blue-600' : 'text-gray-400'}`}><Settings size={18} /> <span className="text-[8px] font-bold">Admin</span></button>}
+          </div>
+          <div className="w-full text-center py-1.5 bg-gray-50 border-t border-gray-100 hidden md:block"><p className="text-[9px] text-gray-400 font-medium">© 2026 R.S Program Development</p></div>
+        </nav>
+
+        <CustomModal isOpen={modalConfig.isOpen} title={modalConfig.title} message={modalConfig.message} type={modalConfig.type} onClose={closeModal} />
+        <ConfirmPopup isOpen={confirmConfig.isOpen} title={confirmConfig.title} message={confirmConfig.message} onConfirm={confirmConfig.action} onCancel={closeConfirm} confirmText={confirmConfig.confirmText} />
+        <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />
+        <PrintableLetterModal selectedPrintSurat={selectedPrintSurat} setSelectedPrintSurat={setSelectedPrintSurat} currentUserProfile={currentUserProfile} rwLeaderName={rwLeaderName} rtSignature={rtSignature} rtStamp={rtStamp} rtKopType={rtKopType} rtKopLogo={rtKopLogo} rtKopBanner={rtKopBanner} />
+        <OfficerDetailModal officer={selectedOfficer} onClose={() => setSelectedOfficer(null)} onImageClick={setPreviewImage} />
+        <WargaDetailModal warga={selectedWargaDetail} onClose={() => setSelectedWargaDetail(null)} isAdmin={isAdmin} onImageClick={setPreviewImage} />
+        <BirthdayWishModal isOpen={selectedBirthdayWarga !== null} warga={selectedBirthdayWarga} onClose={() => setSelectedBirthdayWarga(null)} />
+        <ComplaintModal isOpen={isComplaintModalOpen} onClose={() => setIsComplaintModalOpen(false)} onSubmit={() => { showModal("Pengaduan Terkirim!", "Aduan Anda dikirim dan akan ditindaklanjuti.", "success"); }} currentUserProfile={currentUserProfile} db={db} appId={appId} showConfirm={showConfirm} showModalLocal={showModal} />
+      </div>
+    </div>
+  );
+}
